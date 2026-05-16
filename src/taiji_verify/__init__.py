@@ -25,20 +25,17 @@ from taiji_verify.kun_guard import (
     KunGuardResult,
     HazardLevel,
     KnowledgeAnchor,
-    
 )
 from taiji_verify.qian_advance import (
     QianAdvance,
     QianAdvanceResult,
     PerturbationResult,
-    QianAdvanceResult,
 )
 from taiji_verify.fu_return import (
     FuReturn,
     RecoveryResult,
     RecoveryState,
     CrashingEvent,
-    RecoveryState,
 )
 from taiji_verify.xun_tune import (
     XunTune,
@@ -56,7 +53,6 @@ from taiji_verify.polaris import (
     PolarisCompiler,
     TaskAtom,
     TaskState,
-    TaskType,
     TaskType,
     ExecutionToken,
     RoundLock,
@@ -89,32 +85,27 @@ __all__ = [
     "DeltaSResult",
     "GateZone",
     "AnchorExtension",
-    
     # Kun Guard (坤守)
     "KunGuard",
     "KunGuardResult",
     "HazardLevel",
     "KnowledgeAnchor",
     "ResidualCorrection",
-    
     # Qian Advance (乾进)
     "QianAdvance",
     "QianAdvanceResult",
     "PerturbationResult",
     "StabilityScore",
-    
     # Fu Return (复归)
     "FuReturn",
     "RecoveryResult",
     "RecoveryState",
     "CrashingEvent",
     "CollapseState",
-    
     # Xun Tune (巽调)
     "XunTune",
     "AttentionModulation",
     "TunedOutput",
-    
     # Guan Observe (观变)
     "GuanObserve",
     "StateSnapshot",
@@ -122,7 +113,6 @@ __all__ = [
     "AnomalyEvent",
     "ChangeType",
     "ObservedState",
-    
     # Polaris Compiler (北辰编译器)
     "PolarisCompiler",
     "TaskAtom",
@@ -133,7 +123,6 @@ __all__ = [
     "RoundLock",
     "ClosureRecord",
     "CompilationResult",
-    
     # Symptom Map (病候图)
     "SymptomMap",
     "FailureSymptom",
@@ -143,12 +132,10 @@ __all__ = [
     "DetectionResult",
     "Detector",
     "SymptomType",
-    
     # Failure Modes (失败模式)
     "FailureModeDetector",
     "FailureMode",
     "FailureSeverity",
-    
     # Engine (引擎)
     "TaijiVerifyEngine",
     "VerificationRequest",

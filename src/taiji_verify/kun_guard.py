@@ -29,10 +29,11 @@ from typing import Optional, List, Dict
 
 class HazardLevel(str, Enum):
     """危害等级"""
-    LOW = "low"           # < 0.3
-    MEDIUM = "medium"     # 0.3 - 0.6
-    HIGH = "high"         # 0.6 - 0.9
-    CRITICAL = "critical" # >= 0.9
+
+    LOW = "low"  # < 0.3
+    MEDIUM = "medium"  # 0.3 - 0.6
+    HIGH = "high"  # 0.6 - 0.9
+    CRITICAL = "critical"  # >= 0.9
 
     @classmethod
     def from_residual(cls, residual: float) -> HazardLevel:
@@ -50,6 +51,7 @@ class HazardLevel(str, Enum):
 @dataclass
 class KnowledgeAnchor:
     """知识锚点"""
+
     anchor_id: str
     content: str
     vector: np.ndarray
@@ -61,6 +63,7 @@ class KnowledgeAnchor:
 @dataclass
 class KunGuardResult:
     """坤守修正结果"""
+
     corrected_vector: np.ndarray
     residual: float
     hazard_level: HazardLevel
@@ -110,9 +113,9 @@ class KunGuard:
         """
         self.m = correction_factor
         self._thresholds = {
-            'low': low_threshold,
-            'medium': medium_threshold,
-            'high': high_threshold,
+            "low": low_threshold,
+            "medium": medium_threshold,
+            "high": high_threshold,
         }
         self._anchors: Dict[str, KnowledgeAnchor] = {}
 
@@ -150,11 +153,11 @@ class KunGuard:
     def compute_residual(self, input_vector: np.ndarray, ground_vector: np.ndarray) -> float:
         """
         计算语义残差: ||I - G||
-        
+
         Args:
             input_vector: 输入向量
             ground_vector: 知识向量（ground truth）
-        
+
         Returns:
             残差值 ∈ [0, 1]
         """
@@ -165,7 +168,7 @@ class KunGuard:
     def check_hazard(self, residual: float) -> tuple[HazardLevel, bool]:
         """
         检查危害等级
-        
+
         Returns:
             (危害等级, 是否需要修正)
         """
@@ -181,48 +184,48 @@ class KunGuard:
     ) -> KunGuardResult:
         """
         执行语义残差修正
-        
+
         核心公式: B = I - G + m * c²
-        
+
         Args:
             input_vector: 输入向量 I
             ground_vector: 知识向量 G
             confidence_vector: 置信度向量 c（可选）
-        
+
         Returns:
             KunGuardResult 修正结果
         """
         # 归一化向量
         input_vec = input_vector / (norm(input_vector) + 1e-10)
         ground_vec = ground_vector / (norm(ground_vector) + 1e-10)
-        
+
         # 计算残差
         residual = self.compute_residual(input_vec, ground_vec)
         hazard_level = HazardLevel.from_residual(residual)
-        
+
         # 如果需要修正，应用残差修正公式
         corrected = input_vec.copy()
         correction_applied = False
         anchor_used = None
-        
+
         if hazard_level in (HazardLevel.HIGH, HazardLevel.CRITICAL):
             # 使用公式: B = I - G + m * c²
-            
+
             # 如果有置信度向量，使用它；否则使用默认值
             if confidence_vector is not None:
                 c_squared = np.square(confidence_vector)
             else:
                 c_squared = np.ones_like(input_vec) * 0.5
-            
+
             # 残差修正
             corrected = input_vec - ground_vec + self.m * c_squared
             corrected = corrected / (norm(corrected) + 1e-10)
             correction_applied = True
-            
+
             # 尝试投影到最近的知识锚点
             if self._anchors:
                 anchor_used = self._project_to_nearest_anchor(corrected)
-        
+
         return KunGuardResult(
             corrected_vector=corrected,
             residual=residual,
@@ -230,8 +233,8 @@ class KunGuard:
             anchor_used=anchor_used,
             correction_applied=correction_applied,
             metadata={
-                'correction_factor': self.m,
-                'anchors_count': len(self._anchors),
+                "correction_factor": self.m,
+                "anchors_count": len(self._anchors),
             },
         )
 
@@ -239,13 +242,13 @@ class KunGuard:
         """投影到最近的知识锚点"""
         best_anchor = None
         best_sim = -1.0
-        
+
         for aid, anchor in self._anchors.items():
             sim = float(np.dot(vector, anchor.vector))
             if sim > best_sim:
                 best_sim = sim
                 best_anchor = aid
-        
+
         return best_anchor or ""
 
     def correct_with_projection(
@@ -255,26 +258,26 @@ class KunGuard:
     ) -> KunGuardResult:
         """
         带知识锚点投影的修正
-        
+
         当残差超过阈值时，将输出投影到知识库中最相关的锚点方向
         """
         result = self.correct(input_vector, ground_vector)
-        
+
         if result.needs_correction and self._anchors:
             # 找到最相关的锚点
             similarities = []
             for aid, anchor in self._anchors.items():
                 sim = float(np.dot(result.corrected_vector, anchor.vector))
                 similarities.append((aid, sim, anchor))
-            
+
             # 选择相似度最高的锚点进行投影
             similarities.sort(key=lambda x: x[1], reverse=True)
             best_aid, best_sim, best_anchor = similarities[0]
-            
+
             # 投影：将修正向量向锚点方向移动
             projected = (1 - best_sim) * result.corrected_vector + best_sim * best_anchor.vector
             projected = projected / (norm(projected) + 1e-10)
-            
+
             return KunGuardResult(
                 corrected_vector=projected,
                 residual=result.residual * (1 - best_sim * 0.5),
@@ -282,11 +285,11 @@ class KunGuard:
                 anchor_used=best_aid,
                 correction_applied=True,
                 metadata={
-                    'projection_anchor': best_aid,
-                    'projection_similarity': best_sim,
+                    "projection_anchor": best_aid,
+                    "projection_similarity": best_sim,
                 },
             )
-        
+
         return result
 
     @property

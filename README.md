@@ -1,6 +1,8 @@
 # Taiji Verify - 太极验证引擎
 
-基于八卦理论的AI输出语义验证系统，通过"阴阳距计算"、"坤守修正"、"乾进评估"、"复归检测"、"巽调优化"五模块联动，实现对AI输出语义漂移的实时监控与修正。
+基于八卦理论的AI输出语义验证系统，通过六层架构实现对AI输出语义漂移的实时监控与修正。
+
+**版本: 2.0.0** | **测试: 450** | **覆盖率: 91%**
 
 ## 核心模块
 
@@ -12,49 +14,31 @@
 | FuReturn | 复 | 复归检测 - 崩溃逆转，恢复正常状态 |
 | XunTune | 巽 | 巽调优化 - 注意力调节，动态门控 |
 | Polaris | 北辰 | 北辰编译器 - 任务分解与执行调度 |
-| SymptomMap | 病候 | 16种失败模式检测 - 全面覆盖异常场景 |
-| Engine | 引擎 | 太极验证主引擎 - 整合五大模块的验证流水线 |
+| TwinAtlas | 双图 | 正向路由 + 逆向验证 |
+| Engine | 引擎 | 六层验证主引擎 |
 
-## 架构图
+## 六层架构
 
 ```
-                    输入向量
-                        │
-                        ▼
-                ┌───────────────┐
-                │   DeltaS      │ ← 阴阳距计算
-                │  阴阳模块     │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │  KunGuard     │ ← 残差修正
-                │   坤守        │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │ QianAdvance   │ ← 稳定性评估
-                │   乾进        │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │  FuReturn     │ ← 崩溃逆转
-                │   复归        │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │   XunTune    │ ← 注意力调节
-                │   巽调        │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │    Engine     │ ← 验证结果
-                │ 太极验证引擎  │
-                └───────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Layer 6: 执行层                           │
+│              目标编译器(Polaris) | 泄漏审计(LeakAuditor)           │
+├─────────────────────────────────────────────────────────────────┤
+│                        Layer 5: 治理层                           │
+│   TwinAtlas | 7个治理门(PROBLEM_FORMATION/WORLD_ALIGNMENT等)      │
+├─────────────────────────────────────────────────────────────────┤
+│                        Layer 4: 诊断层                           │
+│        全局修复图(GlobalFixMap) | 故障排除图谱(Troubleshooting)    │
+├─────────────────────────────────────────────────────────────────┤
+│                        Layer 3: 推理层                           │
+│  七步链(SevenStepChain) | 语义防火墙(SemanticFirewall) | 耦合器    │
+├─────────────────────────────────────────────────────────────────┤
+│                        Layer 2: 检测层                           │
+│    规则引擎(RuleEngine) | 幻觉检测(Hallucination) | 溯源(Source)   │
+├─────────────────────────────────────────────────────────────────┤
+│                        Layer 1: 核心层                           │
+│        ΔS计算 | 坤守 | 乾进 | 复归 | 巽调 | 北极星编译            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 安装
@@ -71,67 +55,87 @@ pip install -e ".[dev]"
 
 ## 快速开始
 
-```python
-from taiji_verify import TaijiVerifyEngine, InputState
-import numpy as np
+### 基础使用
 
-# 初始化引擎
+```python
+from taiji_verify.engine import TaijiVerifyEngine, Verdict
+
 engine = TaijiVerifyEngine()
 
-# 准备输入
-input_state = InputState(
-    output_vector=np.random.randn(128).astype(np.float32),
-    ground_truth_vector=np.random.randn(128).astype(np.float32),
-    context={'task': 'reasoning'}
+response = engine.verify(
+    input_text="碳排放权交易管理办法规定碳排放权交易应当遵守本办法。请问该项目的环境影响评价应该如何开展？",
+    ground_truth="碳排放权交易管理办法规定...",
 )
 
-# 执行验证
-result = engine.verify(input_state)
-
-# 检查结果
-if result.overall_safe:
-    print("✓ 验证通过")
-else:
-    print(f"✗ 检测到问题: {result.detected_patterns}")
+print(f"判定: {response.verdict}")
+print(f"通过: {response.is_passing}")
+print(f"耗时: {response.processing_time_ms}ms")
 ```
 
-## 各模块详解
-
-### DeltaS (阴阳距)
+### 向量验证
 
 ```python
-from taiji_verify.delta_s import DeltaSCalculator, GateZone
+import numpy as np
+from taiji_verify.engine import TaijiVerifyEngine
 
-calc = DeltaSCalculator()
-result = calc.compute(output_vec, ground_truth_vec)
+engine = TaijiVerifyEngine()
 
-print(f"阴阳距: {result.delta_s:.4f}")
-print(f"区域: {result.zone.name}")
-print(f"安全: {result.is_safe}")
+input_vec = np.random.randn(768)
+ground_vec = np.random.randn(768)
+
+response = engine.verify_with_vectors(input_vec, ground_vec)
+print(f"判定: {response.verdict}")
 ```
 
-### KunGuard (坤守)
+### 自定义Embedding
 
 ```python
-from taiji_verify.kun_guard import KunGuard, HazardLevel
+from taiji_verify.engine import TaijiVerifyEngine
+from taiji_verify.embedding import SimpleBagOfWordsProvider
 
-guard = KunGuard()
-residual = guard.compute_residual(output_vec, ground_vec)
-level, needs_correction = guard.check_hazard(residual)
+provider = SimpleBagOfWordsProvider(dimension=128)
+engine = TaijiVerifyEngine(embedding_dim=128)
 
-if needs_correction:
-    corrected = guard.correct(output_vec, ground_vec)
+def embed_fn(text):
+    return provider.embed(text)
+
+response = engine.verify(
+    input_text="...",
+    ground_truth="...",
+    embed_fn=embed_fn,
+)
 ```
 
-### SymptomMap (病候图)
+## 判定结果
 
-```python
-from taiji_verify.symptom_map import SymptomMap, SymptomType
+| 判定 | 说明 |
+|------|------|
+| PASS | 通过 - ΔS在SAFE+低风险+所有治理门通过 |
+| CONDITIONAL_PASS | 有条件通过 - ΔS在TRANSIT或治理门COARSE |
+| CORRECTED | 修正后通过 - ΔS在RISK但修正成功 |
+| BLOCK | 阻断 - 治理门STOP或CRITICAL失败模式 |
+| ESCALATE | 升级 - ΔS在DANGER或修正失败 |
 
-symptom_map = SymptomMap()
-symptom = symptom_map.detect(state)
-print(f"检测到症状: {symptom.symptom_type.name}")
-```
+## ΔS区域
+
+| 区域 | 范围 | 处理策略 |
+|------|------|----------|
+| SAFE | 0 - 0.4 | 直接通过 |
+| TRANSIT | 0.4 - 0.6 | 有条件通过，监控 |
+| RISK | 0.6 - 0.85 | 修正+重评估 |
+| DANGER | 0.85+ | 阻断+升级 |
+
+## 7个治理门
+
+| 门类型 | 描述 | 输出状态 |
+|--------|------|----------|
+| PROBLEM_FORMATION | 问题是否有效形成 | STOP/COARSE/AUTHORIZED |
+| WORLD_ALIGNMENT | 是否与已知事实对齐 | STOP/AUTHORIZED |
+| COLLAPSE_GEOMETRY | 是否有崩溃迹象 | STOP/COARSE/AUTHORIZED |
+| ADJACENT_CUT | 是否与相邻领域冲突 | COARSE/AUTHORIZED |
+| RESOLUTION_AUTH | 是否赢得存在权利 | COARSE/UNRESOLVED/AUTHORIZED |
+| FIX_LEGALITY | 修正是否合法 | STOP/AUTHORIZED |
+| EMISSION_CONTROL | 是否可公开发布 | STOP/AUTHORIZED |
 
 ## 测试
 
@@ -140,7 +144,12 @@ print(f"检测到症状: {symptom.symptom_type.name}")
 pytest tests/ -v
 
 # 运行覆盖率
-pytest tests/ --cov=taiji_verify --cov-report=html
+pytest tests/ --cov=src/taiji_verify --cov-report=html
+
+# 代码质量检查
+ruff check src/
+ruff format src/
+mypy src/ --ignore-missing-imports
 ```
 
 ## 项目结构
@@ -148,22 +157,32 @@ pytest tests/ --cov=taiji_verify --cov-report=html
 ```
 taiji-verify/
 ├── src/taiji_verify/      # 核心模块
-│   ├── delta_s.py         # 阴阳距
-│   ├── kun_guard.py       # 坤守
-│   ├── qian_advance.py    # 乾进
-│   ├── fu_return.py       # 复归
-│   ├── xun_tune.py        # 巽调
-│   ├── guan_observe.py    # 观变
-│   ├── polaris.py         # 北辰编译器
-│   ├── symptom_map.py     # 病候图
-│   ├── engine.py          # 主引擎
-│   └── failure_modes.py   # 失败模式
-├── tests/                  # 测试套件
-├── contrib/                # 可选集成
-│   └── plugins.py         # 插件系统（可选）
-└── docs/                  # 文档
-    └── architecture.md    # 架构说明
+│   ├── delta_s.py          # 阴阳距
+│   ├── kun_guard.py        # 坤守
+│   ├── qian_advance.py     # 乾进
+│   ├── fu_return.py        # 复归
+│   ├── xun_tune.py         # 巽调
+│   ├── guan_observe.py     # 观变
+│   ├── polaris.py          # 北辰编译器
+│   ├── engine.py           # 主引擎
+│   ├── embedding.py         # Embedding提供者
+│   ├── detection/          # 检测层
+│   ├── reasoning/          # 推理层
+│   ├── diagnosis/          # 诊断层
+│   ├── governance/         # 治理层
+│   └── execution/          # 执行层
+├── tests/                  # 测试套件 (450个测试)
+├── docs/                   # 文档
+│   ├── architecture.md     # 架构说明
+│   └── api.md              # API参考
+├── CHANGELOG.md           # 更新日志
+└── pyproject.toml         # 项目配置
 ```
+
+## 文档
+
+- [架构文档](docs/architecture.md) - 六层架构详解
+- [API参考](docs/api.md) - 完整接口文档
 
 ## 许可
 

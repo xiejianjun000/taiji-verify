@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 class RiskLevel(str, Enum):
     """风险等级"""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -32,6 +33,7 @@ class RiskLevel(str, Enum):
 @dataclass
 class SegmentResult:
     """分段检测结果"""
+
     text: str
     is_hallucination: bool
     confidence: float
@@ -44,6 +46,7 @@ class SegmentResult:
 @dataclass
 class DetectionResult:
     """检测结果"""
+
     weighted_score: float
     risk_level: RiskLevel
     details: dict = field(default_factory=dict)
@@ -110,9 +113,9 @@ class HallucinationDetector:
 
         total_weight = self.rule_weight + self.consistency_weight + self.trace_weight
         weighted_score = (
-            rule_score * self.rule_weight +
-            consistency_score * self.consistency_weight +
-            trace_score * self.trace_weight
+            rule_score * self.rule_weight
+            + consistency_score * self.consistency_weight
+            + trace_score * self.trace_weight
         ) / total_weight
 
         risk_level = self._compute_risk_level(weighted_score)
@@ -121,14 +124,14 @@ class HallucinationDetector:
             weighted_score=weighted_score,
             risk_level=risk_level,
             details={
-                'rule_score': rule_score,
-                'consistency_score': consistency_score,
-                'trace_score': trace_score,
-                'weights': {
-                    'rule': self.rule_weight,
-                    'consistency': self.consistency_weight,
-                    'trace': self.trace_weight,
-                }
+                "rule_score": rule_score,
+                "consistency_score": consistency_score,
+                "trace_score": trace_score,
+                "weights": {
+                    "rule": self.rule_weight,
+                    "consistency": self.consistency_weight,
+                    "trace": self.trace_weight,
+                },
             },
         )
 
@@ -147,22 +150,24 @@ class HallucinationDetector:
 
             total_weight = self.rule_weight + self.consistency_weight + self.trace_weight
             score = (
-                rule_score * self.rule_weight +
-                consistency_score * self.consistency_weight +
-                trace_result['score'] * self.trace_weight
+                rule_score * self.rule_weight
+                + consistency_score * self.consistency_weight
+                + trace_result["score"] * self.trace_weight
             ) / total_weight
 
             is_hallucination = score > self.risk_threshold
 
-            segment_results.append(SegmentResult(
-                text=segment,
-                is_hallucination=is_hallucination,
-                confidence=score,
-                matched_sources=trace_result['sources'],
-                rule_score=rule_score,
-                consistency_score=consistency_score,
-                trace_score=trace_result['score'],
-            ))
+            segment_results.append(
+                SegmentResult(
+                    text=segment,
+                    is_hallucination=is_hallucination,
+                    confidence=score,
+                    matched_sources=trace_result["sources"],
+                    rule_score=rule_score,
+                    consistency_score=consistency_score,
+                    trace_score=trace_result["score"],
+                )
+            )
 
         if not segment_results:
             return DetectionResult(weighted_score=0.0, risk_level=RiskLevel.LOW)
@@ -183,12 +188,13 @@ class HallucinationDetector:
             return 1.0 - result.confidence
 
         suspicious_patterns = [
-            r'GB\d{5,}',
-            r'\d{4,}年\d{1,2}月',
-            r'据.*报道',
-            r'研究表明',
+            r"GB\d{5,}",
+            r"\d{4,}年\d{1,2}月",
+            r"据.*报道",
+            r"研究表明",
         ]
         import re
+
         for pattern in suspicious_patterns:
             if re.search(pattern, text):
                 return 0.8
@@ -201,9 +207,9 @@ class HallucinationDetector:
             return 1.0 - result.avg_similarity
 
         contradictions = [
-            ('是', '不是'),
-            ('有', '没有'),
-            ('可以', '不可以'),
+            ("是", "不是"),
+            ("有", "没有"),
+            ("可以", "不可以"),
         ]
         for pos, neg in contradictions:
             if pos in text and neg in text:
@@ -235,12 +241,12 @@ class HallucinationDetector:
             result = self._source_tracer.query(segment)
             if result.matched_entry_ids:
                 return {
-                    'score': max(0.0, 1.0 - result.coverage),
-                    'sources': result.matched_entry_ids
+                    "score": max(0.0, 1.0 - result.coverage),
+                    "sources": result.matched_entry_ids,
                 }
-            return {'score': 0.8, 'sources': []}
+            return {"score": 0.8, "sources": []}
 
-        return {'score': 0.3, 'sources': []}
+        return {"score": 0.3, "sources": []}
 
     def _compute_risk_level(self, score: float) -> RiskLevel:
         """计算风险等级"""
@@ -256,5 +262,6 @@ class HallucinationDetector:
     def _split_sentences(self, text: str) -> list[str]:
         """分割句子"""
         import re
-        sentences = re.split(r'[。！？；\n]+', text)
+
+        sentences = re.split(r"[。！？；\n]+", text)
         return [s.strip() for s in sentences if s.strip()]

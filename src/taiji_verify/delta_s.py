@@ -16,7 +16,6 @@ DeltaS (阴阳距) - Taiji Verify 核心计算模块
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -27,10 +26,11 @@ from numpy.linalg import norm
 
 class GateZone(str, Enum):
     """阴阳距闸区"""
-    SAFE = "safe"           # < 0.4
-    TRANSIT = "transit"     # 0.4 - 0.6
-    RISK = "risk"           # 0.6 - 0.85
-    DANGER = "danger"       # >= 0.85
+
+    SAFE = "safe"  # < 0.4
+    TRANSIT = "transit"  # 0.4 - 0.6
+    RISK = "risk"  # 0.6 - 0.85
+    DANGER = "danger"  # >= 0.85
 
     @classmethod
     def from_delta(cls, delta_s: float) -> GateZone:
@@ -48,6 +48,7 @@ class GateZone(str, Enum):
 @dataclass
 class DeltaSResult:
     """ΔS计算结果"""
+
     delta_s: float
     zone: GateZone
     cosine_similarity: float
@@ -68,6 +69,7 @@ class DeltaSResult:
 @dataclass
 class AnchorExtension:
     """锚点扩展配置"""
+
     source_text: str
     weight: float = 1.0
     vector: Optional[np.ndarray] = None
@@ -96,9 +98,9 @@ class DeltaSCalculator:
     ):
         self.embedding_dim = embedding_dim
         self._thresholds = {
-            'safe': safe_threshold,
-            'transit': transit_threshold,
-            'risk': risk_threshold,
+            "safe": safe_threshold,
+            "transit": transit_threshold,
+            "risk": risk_threshold,
         }
         self._anchor_extensions: list[AnchorExtension] = []
 
@@ -123,9 +125,6 @@ class DeltaSCalculator:
         其中 G' 是 G 与所有锚点向量的加权融合:
           G' = normalize(G + sum(w_i * A_i))
         """
-        # 基础余弦相似度
-        cos_sim = self._cosine_similarity(input_vector, ground_vector)
-
         # 锚点扩展融合
         effective_ground = ground_vector.copy()
         if anchor_vectors:
@@ -156,8 +155,7 @@ class DeltaSCalculator:
             input_vector=input_vector,
             ground_vector=effective_ground,
             anchor_extensions=[
-                {'source': a.source_text, 'weight': a.weight}
-                for a in self._anchor_extensions
+                {"source": a.source_text, "weight": a.weight} for a in self._anchor_extensions
             ],
         )
 
@@ -186,7 +184,7 @@ class DeltaSCalculator:
         """从文本直接计算（需要提供embedding函数）"""
         input_vec = embed_fn(input_text)
         ground_vec = embed_fn(ground_truth)
-        
+
         # 处理锚点
         anchor_vecs = []
         for ext in self._anchor_extensions:

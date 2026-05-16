@@ -16,13 +16,13 @@ Twin Atlas - 双图
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
 class ForwardResult:
     """正向路由结果"""
+
     target_domain: str
     route_path: list[str]
     confidence: float
@@ -32,6 +32,7 @@ class ForwardResult:
 @dataclass
 class InverseResult:
     """逆向治理结果"""
+
     is_valid: bool
     validation_details: dict
     issues: list[str]
@@ -40,6 +41,7 @@ class InverseResult:
 @dataclass
 class AtlasResult:
     """双图结果"""
+
     forward_result: ForwardResult
     inverse_result: InverseResult
     coupled: bool

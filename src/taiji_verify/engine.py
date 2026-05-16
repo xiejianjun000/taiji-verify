@@ -25,31 +25,28 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Callable, Any
+from typing import Optional, Callable
 
 import numpy as np
 
 from taiji_verify.delta_s import DeltaSCalculator, DeltaSResult, GateZone
-from taiji_verify.kun_guard import KunGuard, KunGuardResult, HazardLevel
-from taiji_verify.qian_advance import QianAdvance, QianAdvanceResult
-from taiji_verify.fu_return import FuReturn, RecoveryState
-from taiji_verify.xun_tune import XunTune, TunedOutput
 from taiji_verify.polaris import PolarisCompiler, CompilationResult
 from taiji_verify.failure_modes import (
-    FailureModeDetector, FailureDetection, FailureSeverity,
+    FailureModeDetector,
+    FailureDetection,
+    FailureSeverity,
 )
 
 from taiji_verify.detection.rule_engine import RuleEngine
 from taiji_verify.detection.consistency import SelfConsistencyChecker
 from taiji_verify.detection.hallucination_detector import (
-    HallucinationDetector, RiskLevel as DetectRiskLevel
+    HallucinationDetector,
+    RiskLevel as DetectRiskLevel,
 )
 from taiji_verify.reasoning.seven_step_chain import SevenStepChain, StepInput
 from taiji_verify.reasoning.coupler import Coupler
 from taiji_verify.reasoning.semantic_firewall import SemanticFirewall
-from taiji_verify.governance.governance_gates import (
-    GovernanceGate, GateType, GateState, evaluate_all_gates
-)
+from taiji_verify.governance.governance_gates import GateState, evaluate_all_gates
 from taiji_verify.governance.twin_atlas import TwinAtlas
 from taiji_verify.execution.goal_compiler import GoalCompiler
 from taiji_verify.execution.leak_auditor import LeakAuditor
@@ -57,6 +54,7 @@ from taiji_verify.execution.leak_auditor import LeakAuditor
 
 class Verdict(str, Enum):
     """最终判定"""
+
     PASS = "pass"
     CONDITIONAL_PASS = "conditional_pass"
     CORRECTED = "corrected"
@@ -67,6 +65,7 @@ class Verdict(str, Enum):
 @dataclass
 class VerificationRequest:
     """验证请求"""
+
     input_text: str
     ground_truth: Optional[str] = None
     context: Optional[dict] = None
@@ -77,6 +76,7 @@ class VerificationRequest:
 @dataclass
 class VerificationResponse:
     """验证响应"""
+
     verdict: Verdict
     delta_s_result: Optional[DeltaSResult] = None
     detection_result: Optional[dict] = field(default_factory=dict)
@@ -92,9 +92,7 @@ class VerificationResponse:
 
     @property
     def is_passing(self) -> bool:
-        return self.verdict in (
-            Verdict.PASS, Verdict.CONDITIONAL_PASS, Verdict.CORRECTED
-        )
+        return self.verdict in (Verdict.PASS, Verdict.CONDITIONAL_PASS, Verdict.CORRECTED)
 
 
 class TaijiVerifyEngine:
@@ -151,6 +149,7 @@ class TaijiVerifyEngine:
         """初始化诊断层"""
         from taiji_verify.diagnosis.global_fix_map import GlobalFixMap
         from taiji_verify.diagnosis.troubleshooting_atlas import TroubleshootingAtlas
+
         self.fix_map = GlobalFixMap()
         self.troubleshooting_atlas = TroubleshootingAtlas()
 
@@ -215,7 +214,9 @@ class TaijiVerifyEngine:
         return self.verify(input_text, ground_truth, context)
 
     def _basic_verification(
-        self, request: VerificationRequest, start: float,
+        self,
+        request: VerificationRequest,
+        start: float,
     ) -> VerificationResponse:
         """基础验证（Layer 1核心）"""
         detections = self.failure_detector.detect_all(request.input_text)
@@ -232,20 +233,20 @@ class TaijiVerifyEngine:
             failure_detections=detections,
             compilation=compilation,
             processing_time_ms=int((time.time() - start) * 1000),
-            metadata={'mode': 'basic'},
+            metadata={"mode": "basic"},
         )
 
     def _full_layer_verification(
-        self, request: VerificationRequest, start: float,
+        self,
+        request: VerificationRequest,
+        start: float,
     ) -> VerificationResponse:
         """完整六层验证"""
         input_text = request.input_text
 
         detection_result = self._run_detection_layer(input_text)
 
-        reasoning_chain_result = self._run_reasoning_layer(
-            input_text, request.ground_truth
-        )
+        reasoning_chain_result = self._run_reasoning_layer(input_text, request.ground_truth)
 
         governance_result = self._run_governance_layer(input_text)
 
@@ -260,9 +261,7 @@ class TaijiVerifyEngine:
                 detection_result, reasoning_chain_result, governance_result
             )
 
-        diagnosis_result = self._run_diagnosis_layer(
-            input_text, detection_result
-        )
+        diagnosis_result = self._run_diagnosis_layer(input_text, detection_result)
 
         compilation = self.compiler.compile(request.ground_truth or input_text)
 
@@ -276,36 +275,38 @@ class TaijiVerifyEngine:
             failure_detections=self.failure_detector.detect_all(input_text),
             compilation=compilation,
             processing_time_ms=int((time.time() - start) * 1000),
-            metadata={'mode': 'full_6layer'},
+            metadata={"mode": "full_6layer"},
         )
 
     def _run_detection_layer(self, text: str) -> dict:
         """运行检测层"""
         result = {
-            'rule_result': None,
-            'consistency_result': None,
-            'hallucination_result': None,
+            "rule_result": None,
+            "consistency_result": None,
+            "hallucination_result": None,
         }
 
         rule_engine = RuleEngine()
-        result['rule_result'] = rule_engine.verify(text)
+        result["rule_result"] = rule_engine.verify(text)
 
         consistency = SelfConsistencyChecker()
-        result['consistency_result'] = consistency.batch_consistency([text])
+        result["consistency_result"] = consistency.batch_consistency([text])
 
         detector = HallucinationDetector()
-        result['hallucination_result'] = detector.detect(text)
+        result["hallucination_result"] = detector.detect(text)
 
         return result
 
     def _run_reasoning_layer(
-        self, text: str, goal: Optional[str],
+        self,
+        text: str,
+        goal: Optional[str],
     ) -> dict:
         """运行推理层"""
         result = {
-            'chain_result': None,
-            'firewall_result': None,
-            'delta_s': None,
+            "chain_result": None,
+            "firewall_result": None,
+            "delta_s": None,
         }
 
         chain = SevenStepChain()
@@ -313,41 +314,41 @@ class TaijiVerifyEngine:
             text=text,
             goal=goal or text,
         )
-        result['chain_result'] = chain.execute_full_chain(input_data)
-        result['delta_s'] = result['chain_result'].final_delta_s
+        result["chain_result"] = chain.execute_full_chain(input_data)
+        result["delta_s"] = result["chain_result"].final_delta_s
 
         firewall = SemanticFirewall()
-        result['firewall_result'] = firewall.check(text)
+        result["firewall_result"] = firewall.check(text)
 
         return result
 
     def _run_governance_layer(self, text: str) -> dict:
         """运行治理层"""
         result = {
-            'gate_results': {},
-            'twin_atlas_result': None,
-            'stopped': False,
-            'coarse': False,
+            "gate_results": {},
+            "twin_atlas_result": None,
+            "stopped": False,
+            "coarse": False,
         }
 
         gate_results = evaluate_all_gates(text)
-        result['gate_results'] = {
-            gate_type.value: gr for gate_type, gr in gate_results.items()
-        }
+        result["gate_results"] = {gate_type.value: gr for gate_type, gr in gate_results.items()}
 
         for gate_type, gate_result in gate_results.items():
             if gate_result.state == GateState.STOP:
-                result['stopped'] = True
+                result["stopped"] = True
             elif gate_result.state == GateState.COARSE:
-                result['coarse'] = True
+                result["coarse"] = True
 
         atlas = TwinAtlas()
-        result['twin_atlas_result'] = atlas.execute(text)
+        result["twin_atlas_result"] = atlas.execute(text)
 
         return result
 
     def _run_diagnosis_layer(
-        self, text: str, detection_result: dict,
+        self,
+        text: str,
+        detection_result: dict,
     ) -> dict:
         """运行诊断层"""
         from taiji_verify.diagnosis.troubleshooting_atlas import TroubleshootingAtlas
@@ -356,13 +357,15 @@ class TaijiVerifyEngine:
         diagnosis = atlas.diagnose(text)
 
         return {
-            'diagnosis': diagnosis,
-            'recommended_fixes': diagnosis.recommended_fixes,
+            "diagnosis": diagnosis,
+            "recommended_fixes": diagnosis.recommended_fixes,
         }
 
     def _run_delta_s(
-        self, embed_fn: Callable,
-        input_text: str, ground_truth: str,
+        self,
+        embed_fn: Callable,
+        input_text: str,
+        ground_truth: str,
     ) -> DeltaSResult:
         """计算阴阳距"""
         input_vec = embed_fn(input_text)
@@ -377,13 +380,13 @@ class TaijiVerifyEngine:
         governance_result: dict,
     ) -> Verdict:
         """综合判定"""
-        if governance_result['stopped']:
+        if governance_result["stopped"]:
             return Verdict.BLOCK
 
-        if governance_result['coarse']:
+        if governance_result["coarse"]:
             return Verdict.CONDITIONAL_PASS
 
-        hallucinations = detection_result.get('hallucination_result')
+        hallucinations = detection_result.get("hallucination_result")
         if hallucinations and hallucinations.risk_level == DetectRiskLevel.CRITICAL:
             return Verdict.BLOCK
 
@@ -392,7 +395,7 @@ class TaijiVerifyEngine:
                 return Verdict.BLOCK
 
         if ds_result.zone == GateZone.RISK:
-            firewall = reasoning_result.get('firewall_result')
+            firewall = reasoning_result.get("firewall_result")
             if firewall and firewall.decision == "MODIFIED":
                 return Verdict.CORRECTED
             return Verdict.ESCALATE
@@ -414,17 +417,17 @@ class TaijiVerifyEngine:
         governance_result: dict,
     ) -> Verdict:
         """无向量时的判定"""
-        if governance_result['stopped']:
+        if governance_result["stopped"]:
             return Verdict.BLOCK
 
-        if governance_result['coarse']:
+        if governance_result["coarse"]:
             return Verdict.CONDITIONAL_PASS
 
-        hallucinations = detection_result.get('hallucination_result')
+        hallucinations = detection_result.get("hallucination_result")
         if hallucinations and hallucinations.risk_level == DetectRiskLevel.CRITICAL:
             return Verdict.BLOCK
 
-        firewall = reasoning_result.get('firewall_result')
+        firewall = reasoning_result.get("firewall_result")
         if firewall and firewall.decision == "BLOCK":
             return Verdict.BLOCK
 
@@ -445,27 +448,30 @@ class TaijiVerifyEngine:
 
     def add_rule(self, rule) -> None:
         """添加规则到检测层"""
-        if hasattr(self, 'rule_engine'):
+        if hasattr(self, "rule_engine"):
             self.rule_engine.add_rule(rule)
 
     def add_knowledge_entry(
-        self, entry_id: str, content: str, keywords: list[str],
+        self,
+        entry_id: str,
+        content: str,
+        keywords: list[str],
     ) -> None:
         """添加知识条目"""
-        if hasattr(self, 'rule_engine'):
+        if hasattr(self, "rule_engine"):
             self.rule_engine.add_knowledge_entry(entry_id, content, keywords)
 
     @property
     def system_health(self) -> dict:
         """系统健康状态"""
         health = {
-            'engine_version': 'v2_6layer',
-            'layers_enabled': {
-                'detection': hasattr(self, 'rule_engine'),
-                'reasoning': hasattr(self, 'seven_step_chain'),
-                'diagnosis': hasattr(self, 'fix_map'),
-                'governance': hasattr(self, 'twin_atlas'),
-                'execution': hasattr(self, 'goal_compiler'),
-            }
+            "engine_version": "v2_6layer",
+            "layers_enabled": {
+                "detection": hasattr(self, "rule_engine"),
+                "reasoning": hasattr(self, "seven_step_chain"),
+                "diagnosis": hasattr(self, "fix_map"),
+                "governance": hasattr(self, "twin_atlas"),
+                "execution": hasattr(self, "goal_compiler"),
+            },
         }
         return health

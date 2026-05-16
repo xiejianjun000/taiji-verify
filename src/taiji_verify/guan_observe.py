@@ -16,21 +16,23 @@ import numpy as np
 from numpy.linalg import norm
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Callable
 from collections import deque
 
 
 class ChangeType(str, Enum):
     """变化类型"""
-    STABLE = "stable"           # 稳定
-    GRADUAL = "gradual"         # 渐变
-    ABRUPT = "abrupt"           # 突变
-    ANOMALY = "anomaly"         # 异常
+
+    STABLE = "stable"  # 稳定
+    GRADUAL = "gradual"  # 渐变
+    ABRUPT = "abrupt"  # 突变
+    ANOMALY = "anomaly"  # 异常
 
 
 @dataclass
 class StateSnapshot:
     """状态快照"""
+
     timestamp: float
     vector: np.ndarray
     similarity: float
@@ -41,9 +43,10 @@ class StateSnapshot:
 @dataclass
 class TrendAnalysis:
     """趋势分析结果"""
-    trend_direction: float      # 趋势方向，正数表示增加，负数表示减少
-    volatility: float          # 波动率
-    anomaly_score: float        # 异常分数
+
+    trend_direction: float  # 趋势方向，正数表示增加，负数表示减少
+    volatility: float  # 波动率
+    anomaly_score: float  # 异常分数
     change_type: ChangeType
     recent_snapshots: List[StateSnapshot]
     metadata: Dict = field(default_factory=dict)
@@ -52,10 +55,11 @@ class TrendAnalysis:
 @dataclass
 class AnomalyEvent:
     """异常事件"""
+
     event_id: str
     timestamp: float
     snapshot: StateSnapshot
-    severity: str               # low/middle/high/critical
+    severity: str  # low/middle/high/critical
     description: str
     metadata: Dict = field(default_factory=dict)
 
@@ -96,7 +100,7 @@ class GuanObserve:
         self.abrupt_threshold = abrupt_threshold
         self.anomaly_threshold = anomaly_threshold
         self.similarity_threshold = similarity_threshold
-        
+
         self._history: deque[StateSnapshot] = deque(maxlen=window_size)
         self._anomaly_events: List[AnomalyEvent] = []
         self._callbacks: List[Callable[[AnomalyEvent], None]] = []
@@ -115,16 +119,16 @@ class GuanObserve:
     def _detect_change_type(self, similarity: float, prev_similarity: float) -> ChangeType:
         """
         根据相似度变化检测变化类型
-        
+
         Args:
             similarity: 当前相似度
             prev_similarity: 上一次相似度
-        
+
         Returns:
             ChangeType 变化类型
         """
         diff = abs(similarity - prev_similarity)
-        
+
         if similarity < self.similarity_threshold:
             return ChangeType.ANOMALY
         elif diff > self.abrupt_threshold:
@@ -141,11 +145,11 @@ class GuanObserve:
     ) -> StateSnapshot:
         """
         追踪状态向量
-        
+
         Args:
             vector: 状态向量
             metadata: 附加元数据
-        
+
         Returns:
             StateSnapshot 状态快照
         """
@@ -154,30 +158,30 @@ class GuanObserve:
             similarity = self._compute_similarity(vector, self._reference_vector)
         else:
             similarity = 1.0
-        
+
         # 检测变化类型
         if self._history:
             prev_similarity = self._history[-1].similarity
             change_type = self._detect_change_type(similarity, prev_similarity)
         else:
             change_type = ChangeType.STABLE
-        
+
         # 创建快照
         snapshot = StateSnapshot(
-            timestamp=np.datetime64('now').astype(float),
+            timestamp=np.datetime64("now").astype(float),
             vector=vector.copy(),
             similarity=similarity,
             change_type=change_type,
             metadata=metadata or {},
         )
-        
+
         # 添加到历史
         self._history.append(snapshot)
-        
+
         # 检测异常并触发回调
         if change_type == ChangeType.ANOMALY:
             self._trigger_anomaly(snapshot)
-        
+
         return snapshot
 
     def _trigger_anomaly(self, snapshot: StateSnapshot):
@@ -191,9 +195,9 @@ class GuanObserve:
             description=f"状态异常: 相似度={snapshot.similarity:.4f}",
             metadata=snapshot.metadata,
         )
-        
+
         self._anomaly_events.append(event)
-        
+
         # 触发所有回调
         for callback in self._callbacks:
             try:
@@ -215,7 +219,7 @@ class GuanObserve:
     def analyze_trend(self) -> TrendAnalysis:
         """
         分析状态变化趋势
-        
+
         Returns:
             TrendAnalysis 趋势分析结果
         """
@@ -226,22 +230,22 @@ class GuanObserve:
                 anomaly_score=0.0,
                 change_type=ChangeType.STABLE,
                 recent_snapshots=[],
-                metadata={'error': 'insufficient_data'},
+                metadata={"error": "insufficient_data"},
             )
-        
+
         # 计算趋势方向
         similarities = [s.similarity for s in self._history]
         trend_direction = np.polyfit(range(len(similarities)), similarities, 1)[0]
-        
+
         # 计算波动率
         volatility = float(np.std(similarities))
-        
+
         # 计算异常分数
         anomaly_score = float(np.mean([1 - s.similarity for s in self._history]))
-        
+
         # 确定变化类型
         latest_change = self._history[-1].change_type
-        
+
         return TrendAnalysis(
             trend_direction=trend_direction,
             volatility=volatility,
@@ -249,23 +253,24 @@ class GuanObserve:
             change_type=latest_change,
             recent_snapshots=list(self._history)[-5:],
             metadata={
-                'window_size': len(self._history),
+                "window_size": len(self._history),
             },
         )
 
     def detect_anomalies(self, threshold: Optional[float] = None) -> List[AnomalyEvent]:
         """
         检测异常事件
-        
+
         Args:
             threshold: 异常阈值，默认使用 anomaly_threshold
-        
+
         Returns:
             异常事件列表
         """
         effective_threshold = threshold or self.anomaly_threshold
         return [
-            event for event in self._anomaly_events
+            event
+            for event in self._anomaly_events
             if 1 - event.snapshot.similarity >= effective_threshold
         ]
 

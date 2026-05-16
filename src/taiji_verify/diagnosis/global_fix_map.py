@@ -21,6 +21,7 @@ import os
 @dataclass
 class FixEntry:
     """修复条目"""
+
     id: str
     category: str
     failure_mode_id: str
@@ -42,7 +43,8 @@ class GlobalFixMap:
 
     DEFAULT_DATA_PATH = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-        "data", "fix_map_entries.json"
+        "data",
+        "fix_map_entries.json",
     )
 
     def __init__(self, data_path: Optional[str] = None):
@@ -55,11 +57,9 @@ class GlobalFixMap:
 
     def _load_from_file(self, data_path: str) -> None:
         """从文件加载"""
-        with open(data_path, 'r', encoding='utf-8') as f:
+        with open(data_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            self.entries = [
-                FixEntry(**item) for item in data
-            ]
+            self.entries = [FixEntry(**item) for item in data]
 
     def _init_minimal_entries(self) -> None:
         """初始化最小条目（文件不存在时的fallback）"""
@@ -71,7 +71,7 @@ class GlobalFixMap:
                 description="增加embedding维度",
                 priority=3,
                 steps=["评估当前维度", "扩展到768维", "重新训练"],
-                references=["ref1"]
+                references=["ref1"],
             ),
         ]
 
@@ -87,7 +87,8 @@ class GlobalFixMap:
         """搜索修复条目"""
         query_lower = query.lower()
         return [
-            e for e in self.entries
+            e
+            for e in self.entries
             if query_lower in e.description.lower() or query_lower in e.category.lower()
         ]
 

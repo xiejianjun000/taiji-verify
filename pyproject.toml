@@ -1,6 +1,6 @@
 [project]
 name = "taiji-verify"
-version = "1.0.0"
+version = "2.0.0"
 description = "太极验证引擎 - 基于八卦理论的AI输出语义验证系统"
 readme = "README.md"
 license = {text = "MIT"}

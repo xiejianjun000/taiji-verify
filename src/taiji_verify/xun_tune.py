@@ -25,6 +25,7 @@ import numpy as np
 @dataclass
 class AttentionModulation:
     """单次注意力调节结果"""
+
     original_weights: np.ndarray
     modulated_weights: np.ndarray
     gate_factor: float
@@ -35,6 +36,7 @@ class AttentionModulation:
 @dataclass
 class TunedOutput:
     """巽调后的完整输出"""
+
     content_vector: np.ndarray
     attention_weights: np.ndarray
     modulation_factor: float
@@ -119,7 +121,9 @@ class XunTune:
         if len(output_vectors) == 1:
             fused = output_vectors[0] * gate
         else:
-            weights = modulated if len(modulated) == len(output_vectors) else np.ones(len(output_vectors))
+            weights = (
+                modulated if len(modulated) == len(output_vectors) else np.ones(len(output_vectors))
+            )
             weights = weights / (weights.sum() + 1e-10)
             fused = sum(w * v for w, v in zip(weights, output_vectors))
 
@@ -129,9 +133,9 @@ class XunTune:
             modulation_factor=gate,
             confidence_adjusted=gate < 0.7,
             metadata={
-                'variance_per_output': variances,
-                'average_variance': avg_var,
-                'gamma': self.gamma,
+                "variance_per_output": variances,
+                "average_variance": avg_var,
+                "gamma": self.gamma,
             },
         )
 

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
-from taiji_verify.polaris import PolarisCompiler, TaskAtom, TaskState
+from taiji_verify.polaris import PolarisCompiler
 
 
 @dataclass
 class TruthObject:
     """真理对象"""
+
     id: str
     content: str
     verification_criteria: str
@@ -23,6 +24,7 @@ class TruthObject:
 @dataclass
 class ClaimCeiling:
     """声明上限"""
+
     id: str
     claim: str
     max_confidence: float
@@ -32,6 +34,7 @@ class ClaimCeiling:
 @dataclass
 class VerificationGate:
     """验证门"""
+
     id: str
     criteria: str
     threshold: float
@@ -41,6 +44,7 @@ class VerificationGate:
 @dataclass
 class ExtendedCompilationResult:
     """扩展编译结果"""
+
     truth_objects: list[TruthObject]
     claim_ceilings: list[ClaimCeiling]
     verification_gates: list[VerificationGate]
@@ -63,12 +67,14 @@ class GoalCompiler(PolarisCompiler):
         keywords = self._extract_keywords(goal)
 
         for i, kw in enumerate(keywords[:3]):
-            objects.append(TruthObject(
-                id=f"TO_{i+1}",
-                content=kw,
-                verification_criteria=f"验证{kw}的正确性",
-                confidence=0.9,
-            ))
+            objects.append(
+                TruthObject(
+                    id=f"TO_{i + 1}",
+                    content=kw,
+                    verification_criteria=f"验证{kw}的正确性",
+                    confidence=0.9,
+                )
+            )
 
         return objects
 
@@ -78,12 +84,14 @@ class GoalCompiler(PolarisCompiler):
         keywords = self._extract_keywords(goal)
 
         for i, kw in enumerate(keywords[:2]):
-            ceilings.append(ClaimCeiling(
-                id=f"CC_{i+1}",
-                claim=f"关于{kw}的声明",
-                max_confidence=0.8,
-                required_sources=[],
-            ))
+            ceilings.append(
+                ClaimCeiling(
+                    id=f"CC_{i + 1}",
+                    claim=f"关于{kw}的声明",
+                    max_confidence=0.8,
+                    required_sources=[],
+                )
+            )
 
         return ceilings
 
@@ -118,5 +126,6 @@ class GoalCompiler(PolarisCompiler):
     def _extract_keywords(self, text: str) -> list[str]:
         """提取关键词"""
         import re
-        words = re.findall(r'[\u4e00-\u9fff]+', text)
+
+        words = re.findall(r"[\u4e00-\u9fff]+", text)
         return [w for w in words if len(w) >= 2]

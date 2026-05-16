@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 @dataclass
 class FirewallResult:
     """防火墙结果"""
+
     decision: str
     delta_s: Optional[float] = None
     step_results: dict = field(default_factory=dict)
@@ -36,8 +37,19 @@ class SemanticFirewall:
     """
 
     REFERENCE_TERMS = [
-        "正确", "标准", "合法", "有效", "符合", "规范", "事实",
-        "法律", "规定", "政策", "真实", "准确", "可靠",
+        "正确",
+        "标准",
+        "合法",
+        "有效",
+        "符合",
+        "规范",
+        "事实",
+        "法律",
+        "规定",
+        "政策",
+        "真实",
+        "准确",
+        "可靠",
     ]
 
     def __init__(
@@ -56,12 +68,15 @@ class SemanticFirewall:
         """延迟初始化模块"""
         if self._kun_guard is None:
             from taiji_verify.kun_guard import KunGuard
+
             self._kun_guard = KunGuard()
         if self._xun_tune is None:
             from taiji_verify.xun_tune import XunTune
+
             self._xun_tune = XunTune()
         if self._fu_return is None:
             from taiji_verify.fu_return import FuReturn
+
             self._fu_return = FuReturn()
 
     def check(self, text: str) -> FirewallResult:
@@ -129,7 +144,7 @@ class SemanticFirewall:
     def _compute_delta_s_from_text(self, text: str) -> float:
         """
         使用文本相似度计算ΔS
-        
+
         基于以下因素计算：
         1. 正面术语匹配度
         2. 负面模式检测
@@ -137,39 +152,43 @@ class SemanticFirewall:
         """
         positive_score = 0.0
         negative_score = 0.0
-        
+
         for term in self.REFERENCE_TERMS:
             if term in text:
                 positive_score += 0.1
-        
+
         suspicious_patterns = [
-            (r'GB\d{5,}', 0.3, "可疑标准编号"),
-            (r'\d{4,}年\d{1,2}月', 0.2, "可疑日期格式"),
-            (r'据.*报道', 0.2, "无来源引用"),
-            (r'研究表明', 0.15, "未验证声明"),
-            (r'据说', 0.25, "未经证实"),
-            (r'可能.*是', 0.1, "不确定性过高"),
+            (r"GB\d{5,}", 0.3, "可疑标准编号"),
+            (r"\d{4,}年\d{1,2}月", 0.2, "可疑日期格式"),
+            (r"据.*报道", 0.2, "无来源引用"),
+            (r"研究表明", 0.15, "未验证声明"),
+            (r"据说", 0.25, "未经证实"),
+            (r"可能.*是", 0.1, "不确定性过高"),
         ]
-        
+
         import re
+
         for pattern, score, label in suspicious_patterns:
             if re.search(pattern, text):
                 negative_score += score
-        
+
         contradiction_indicators = [
-            ('是', '不是'), ('有', '没有'), ('可以', '不可以'),
-            ('必须', '不必'), ('正确', '错误'),
+            ("是", "不是"),
+            ("有", "没有"),
+            ("可以", "不可以"),
+            ("必须", "不必"),
+            ("正确", "错误"),
         ]
         for pos, neg in contradiction_indicators:
             if pos in text and neg in text:
                 negative_score += 0.25
                 break
-        
+
         positive_score = min(positive_score, 0.6)
         negative_score = min(negative_score, 0.8)
-        
+
         delta_s = 0.3 + negative_score - positive_score * 0.5
-        
+
         return max(0.0, min(1.0, delta_s))
 
     def _guan_observe(self, text: str, delta_s: float) -> dict:
@@ -191,9 +210,9 @@ class SemanticFirewall:
         hazard, needs_block = self._kun_guard.check_hazard(delta_s)
 
         return {
-            "hazard_level": hazard.value if hasattr(hazard, 'value') else "LOW",
+            "hazard_level": hazard.value if hasattr(hazard, "value") else "LOW",
             "correction_needed": delta_s > 0.6,
-            "hazard_score": hazard.value if hasattr(hazard, 'value') else "LOW",
+            "hazard_score": hazard.value if hasattr(hazard, "value") else "LOW",
         }
 
     def _fu_return_check(self, delta_s: float) -> dict:
@@ -202,15 +221,12 @@ class SemanticFirewall:
             self._init_modules()
 
         import numpy as np
+
         state_history = [np.array([delta_s])]
         lyapunov = self._fu_return.compute_lyapunov_exponent(
-            state_history=state_history,
-            delta_t=0.1
+            state_history=state_history, delta_t=0.1
         )
-        recovery_state = self._fu_return.detect_crash(
-            lyapunov=lyapunov,
-            residual=delta_s
-        )
+        recovery_state = self._fu_return.detect_crash(lyapunov=lyapunov, residual=delta_s)
 
         return {
             "stable": recovery_state.value in ["normal", "recovered"],

@@ -23,6 +23,7 @@ import re
 
 class GateType(str, Enum):
     """治理门类型"""
+
     PROBLEM_FORMATION = "problem_formation"
     WORLD_ALIGNMENT = "world_alignment"
     COLLAPSE_GEOMETRY = "collapse_geometry"
@@ -34,6 +35,7 @@ class GateType(str, Enum):
 
 class GateState(str, Enum):
     """门状态"""
+
     STOP = "stop"
     COARSE = "coarse"
     UNRESOLVED = "unresolved"
@@ -43,6 +45,7 @@ class GateState(str, Enum):
 @dataclass
 class GateResult:
     """门结果"""
+
     passed: bool
     state: GateState
     reason: str
@@ -109,7 +112,7 @@ class GovernanceGate:
         if len(text) < 10:
             issues.append("问题描述过短")
 
-        if not any(c in text for c in '？?。.!！'):
+        if not any(c in text for c in "？?。.!！"):
             issues.append("缺少结束标点")
 
         question_words = ["什么", "如何", "为什么", "谁", "哪", "when", "what", "how", "why"]
@@ -123,14 +126,14 @@ class GovernanceGate:
                     state=GateState.STOP,
                     reason=f"问题未有效形成: {', '.join(issues)}",
                     confidence=0.9,
-                    details={"issues": issues}
+                    details={"issues": issues},
                 )
             return GateResult(
                 passed=False,
                 state=GateState.COARSE,
                 reason=f"问题格式不完整: {', '.join(issues)}",
                 confidence=0.7,
-                details={"issues": issues}
+                details={"issues": issues},
             )
 
         return GateResult(
@@ -157,9 +160,9 @@ class GovernanceGate:
                                 violations.append(f"{entity}与事实冲突")
 
         fact_check_patterns = [
-            (r'\d{4}年\d{1,2}月', "日期格式"),
-            (r'GB\d{5,}', "异常标准编号"),
-            (r'据.*报道', "无来源引用"),
+            (r"\d{4}年\d{1,2}月", "日期格式"),
+            (r"GB\d{5,}", "异常标准编号"),
+            (r"据.*报道", "无来源引用"),
         ]
 
         for pattern, label in fact_check_patterns:
@@ -172,7 +175,7 @@ class GovernanceGate:
                 state=GateState.STOP,
                 reason=f"与已知事实冲突: {violations[0]}",
                 confidence=0.85,
-                details={"violations": violations}
+                details={"violations": violations},
             )
 
         if not aligned:
@@ -188,7 +191,7 @@ class GovernanceGate:
             state=GateState.AUTHORIZED,
             reason=f"与事实对齐: {len(aligned)}项验证通过",
             confidence=0.95,
-            details={"aligned": aligned}
+            details={"aligned": aligned},
         )
 
     def _evaluate_collapse_geometry(self, text: str) -> GateResult:
@@ -216,7 +219,7 @@ class GovernanceGate:
                 state=GateState.STOP if severity == "HIGH" else GateState.COARSE,
                 reason=f"检测到崩溃迹象: {', '.join(detected)}",
                 confidence=0.9,
-                details={"collapse_indicators": detected, "severity": severity}
+                details={"collapse_indicators": detected, "severity": severity},
             )
 
         return GateResult(
@@ -249,7 +252,7 @@ class GovernanceGate:
                 state=GateState.COARSE,
                 reason=f"检测到领域冲突: {conflicts[0]}",
                 confidence=0.8,
-                details={"conflicts": conflicts}
+                details={"conflicts": conflicts},
             )
 
         return GateResult(
@@ -282,14 +285,16 @@ class GovernanceGate:
                 confidence=0.5,
             )
 
-        has_strong_authority = "义务性表述" in authority_phrases or "强制性表述" in authority_phrases
+        has_strong_authority = (
+            "义务性表述" in authority_phrases or "强制性表述" in authority_phrases
+        )
 
         return GateResult(
             passed=True,
             state=GateState.AUTHORIZED if has_strong_authority else GateState.COARSE,
             reason=f"具有解决权限: {', '.join(authority_phrases)}",
             confidence=0.85,
-            details={"authority_phrases": authority_phrases}
+            details={"authority_phrases": authority_phrases},
         )
 
     def _evaluate_fix_legality(self, text: str) -> GateResult:
@@ -312,7 +317,7 @@ class GovernanceGate:
                 state=GateState.STOP,
                 reason=f"修正不合法: {', '.join(illegal_indicators)}",
                 confidence=0.95,
-                details={"illegal_indicators": illegal_indicators}
+                details={"illegal_indicators": illegal_indicators},
             )
 
         return GateResult(
@@ -343,7 +348,7 @@ class GovernanceGate:
                 state=GateState.STOP,
                 reason=f"包含敏感信息: {', '.join(detected_sensitive)}",
                 confidence=0.95,
-                details={"sensitive": detected_sensitive}
+                details={"sensitive": detected_sensitive},
             )
 
         return GateResult(

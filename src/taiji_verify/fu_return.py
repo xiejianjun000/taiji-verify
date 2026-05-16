@@ -21,22 +21,24 @@ import numpy as np
 from numpy.linalg import norm
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Callable
+from typing import List, Dict, Callable
 
 
 class RecoveryState(str, Enum):
     """恢复状态机状态"""
-    NORMAL = "normal"           # 正常状态
-    WARNING = "warning"         # 警告状态
-    CRASHING = "crashing"       # 崩溃中
-    RECOVERING = "recovering"   # 恢复中
-    RECOVERED = "recovered"     # 已恢复
-    FAILED = "failed"           # 恢复失败
+
+    NORMAL = "normal"  # 正常状态
+    WARNING = "warning"  # 警告状态
+    CRASHING = "crashing"  # 崩溃中
+    RECOVERING = "recovering"  # 恢复中
+    RECOVERED = "recovered"  # 已恢复
+    FAILED = "failed"  # 恢复失败
 
 
 @dataclass
 class CrashingEvent:
     """崩溃事件记录"""
+
     event_id: str
     timestamp: float
     state: RecoveryState
@@ -48,6 +50,7 @@ class CrashingEvent:
 @dataclass
 class RecoveryResult:
     """恢复结果"""
+
     success: bool
     final_state: RecoveryState
     lyapunov_exponent: float
@@ -102,42 +105,42 @@ class FuReturn:
     ) -> float:
         """
         计算李雅普诺夫指数 λ
-        
+
         公式: λ = lim(t→∞) (1/t) * ln(|δ(t)/δ(0)|)
-        
+
         Args:
             state_history: 状态向量历史记录
             delta_t: 时间步长
-        
+
         Returns:
             李雅普诺夫指数，正数表示发散（不稳定），负数表示收敛（稳定）
         """
         if len(state_history) < 2:
             return 0.0
-        
+
         # 计算状态变化的平均增长率
         growth_rates = []
         for i in range(1, len(state_history)):
-            delta_prev = norm(state_history[i-1]) if i > 1 else 1.0
+            delta_prev = norm(state_history[i - 1]) if i > 1 else 1.0
             delta_curr = norm(state_history[i])
-            
+
             if delta_prev > 0:
                 growth_rate = np.log(delta_curr / delta_prev + 1e-10) / delta_t
                 growth_rates.append(growth_rate)
-        
+
         if not growth_rates:
             return 0.0
-        
+
         return float(np.mean(growth_rates))
 
     def detect_crash(self, lyapunov: float, residual: float) -> RecoveryState:
         """
         根据李雅普诺夫指数和残差检测崩溃状态
-        
+
         Args:
             lyapunov: 李雅普诺夫指数
             residual: 语义残差
-        
+
         Returns:
             当前状态
         """
@@ -152,7 +155,7 @@ class FuReturn:
         """记录状态变化事件"""
         event = CrashingEvent(
             event_id=f"event_{len(self._events) + 1}",
-            timestamp=np.datetime64('now').astype(float),
+            timestamp=np.datetime64("now").astype(float),
             state=state,
             lyapunov_exponent=lyapunov,
             residual=residual,
@@ -167,41 +170,41 @@ class FuReturn:
     ) -> RecoveryResult:
         """
         执行崩溃恢复
-        
+
         Args:
             current_vector: 当前（可能崩溃的）状态向量
             stable_reference: 稳定参考向量
-        
+
         Returns:
             RecoveryResult 恢复结果
         """
         self._record_event(RecoveryState.RECOVERING, 0.0, 0.0)
-        
+
         iterations = 0
         success = False
         recovered_vector = current_vector.copy()
-        
+
         for attempt in range(self.max_retries):
             iterations += 1
-            
+
             # 计算与稳定参考的距离
             distance = float(norm(recovered_vector - stable_reference))
-            
+
             # 检查是否已收敛
             if distance < self.eps:
                 success = True
                 break
-            
+
             # 向稳定方向恢复：线性插值
             alpha = min(0.3, 1.0 / (attempt + 1))
             recovered_vector = (1 - alpha) * recovered_vector + alpha * stable_reference
             recovered_vector = recovered_vector / (norm(recovered_vector) + 1e-10)
-        
+
         final_state = RecoveryState.RECOVERED if success else RecoveryState.FAILED
         lyapunov = self.compute_lyapunov_exponent([current_vector, recovered_vector])
-        
+
         self._record_event(final_state, lyapunov, float(norm(recovered_vector - stable_reference)))
-        
+
         return RecoveryResult(
             success=success,
             final_state=final_state,
@@ -209,9 +212,9 @@ class FuReturn:
             iterations=iterations,
             events=self._events.copy(),
             metadata={
-                'attempts': self.max_retries,
-                'Bc': self.Bc,
-                'eps': self.eps,
+                "attempts": self.max_retries,
+                "Bc": self.Bc,
+                "eps": self.eps,
             },
         )
 
@@ -223,12 +226,12 @@ class FuReturn:
     ) -> RecoveryResult:
         """
         自适应恢复 - 根据李雅普诺夫指数动态调整恢复策略
-        
+
         Args:
             current_vector: 当前状态向量
             stable_reference: 稳定参考向量
             lyapunov: 当前李雅普诺夫指数
-        
+
         Returns:
             RecoveryResult 恢复结果
         """
@@ -241,7 +244,7 @@ class FuReturn:
                 final_state=RecoveryState.RECOVERED,
                 lyapunov_exponent=0.0,
                 iterations=1,
-                metadata={'strategy': 'hard_reset'},
+                metadata={"strategy": "hard_reset"},
             )
         elif lyapunov > 0.5:
             # 中度不稳定：快速收敛
@@ -251,13 +254,13 @@ class FuReturn:
             alpha = 0.1
             recovered = (1 - alpha) * current_vector + alpha * stable_reference
             recovered = recovered / (norm(recovered) + 1e-10)
-            
+
             return RecoveryResult(
                 success=True,
                 final_state=RecoveryState.RECOVERED,
                 lyapunov_exponent=lyapunov * 0.5,
                 iterations=1,
-                metadata={'strategy': 'fine_tune'},
+                metadata={"strategy": "fine_tune"},
             )
 
     def monitor_and_recover(
@@ -268,12 +271,12 @@ class FuReturn:
     ) -> RecoveryResult:
         """
         监控并自动恢复
-        
+
         Args:
             state_history: 状态向量历史
             stable_reference: 稳定参考向量
             delta_t: 时间步长
-        
+
         Returns:
             RecoveryResult 恢复结果
         """
@@ -283,33 +286,33 @@ class FuReturn:
                 final_state=RecoveryState.NORMAL,
                 lyapunov_exponent=0.0,
                 iterations=0,
-                metadata={'error': 'insufficient_history'},
+                metadata={"error": "insufficient_history"},
             )
-        
+
         # 计算当前李雅普诺夫指数
         lyapunov = self.compute_lyapunov_exponent(state_history, delta_t)
-        
+
         # 计算最新残差
         latest_state = state_history[-1]
         residual = float(norm(latest_state - stable_reference))
-        
+
         # 检测状态
         detected_state = self.detect_crash(lyapunov, residual)
         self._record_event(detected_state, lyapunov, residual)
-        
+
         # 如果需要恢复
         if detected_state == RecoveryState.CRASHING:
             return self.adaptive_recover(latest_state, stable_reference, lyapunov)
         elif detected_state == RecoveryState.WARNING:
             # 预防性恢复
             return self.adaptive_recover(latest_state, stable_reference, lyapunov)
-        
+
         return RecoveryResult(
             success=True,
             final_state=detected_state,
             lyapunov_exponent=lyapunov,
             iterations=0,
-            metadata={'status': 'no_action_needed'},
+            metadata={"status": "no_action_needed"},
         )
 
     def add_recovery_callback(self, callback: Callable):

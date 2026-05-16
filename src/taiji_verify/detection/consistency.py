@@ -20,6 +20,7 @@ import numpy as np
 @dataclass
 class SimilarityResult:
     """相似度结果"""
+
     similarity: float
     method: str
     samples: list = field(default_factory=list)
@@ -28,6 +29,7 @@ class SimilarityResult:
 @dataclass
 class SamplingConfig:
     """采样配置"""
+
     num_samples: int = 3
     threshold: float = 0.7
     methods: list[str] = field(default_factory=lambda: ["jaccard", "levenshtein", "cosine"])
@@ -36,6 +38,7 @@ class SamplingConfig:
 @dataclass
 class ConsistencyResult:
     """一致性检查结果"""
+
     passed: bool
     avg_similarity: float
     samples: list
@@ -102,11 +105,7 @@ class SelfConsistencyChecker:
             prev[0] = i
             for j in range(1, m + 1):
                 cost = 0 if s1[j - 1] == s2[i - 1] else 1
-                prev[j] = min(
-                    distances[j] + 1,
-                    prev[j - 1] + 1,
-                    distances[j - 1] + cost
-                )
+                prev[j] = min(distances[j] + 1, prev[j - 1] + 1, distances[j - 1] + cost)
             distances = prev
 
         distance = distances[m]
@@ -172,8 +171,8 @@ class SelfConsistencyChecker:
             avg_similarity=float(avg_sim),
             samples=texts,
             details={
-                'pairwise_similarities': similarities,
-                'threshold': self.threshold,
+                "pairwise_similarities": similarities,
+                "threshold": self.threshold,
             },
         )
 
@@ -204,8 +203,8 @@ class SelfConsistencyChecker:
             avg_similarity=float(avg_sim),
             samples=texts,
             details={
-                'pairwise_similarities': similarities,
-                'threshold': self.threshold,
+                "pairwise_similarities": similarities,
+                "threshold": self.threshold,
             },
         )
 
@@ -227,7 +226,7 @@ class SelfConsistencyChecker:
         vec2 = np.array([1.0 if c in set2 else 0.0 for c in set(set1 | set2)])
 
         return {
-            'jaccard': self.jaccard_similarity(set1, set2),
-            'levenshtein': self.levenshtein_similarity(text1, text2),
-            'cosine': self.cosine_similarity(vec1, vec2),
+            "jaccard": self.jaccard_similarity(set1, set2),
+            "levenshtein": self.levenshtein_similarity(text1, text2),
+            "cosine": self.cosine_similarity(vec1, vec2),
         }

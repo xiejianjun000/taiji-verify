@@ -6,7 +6,7 @@ Execution Token Board - 执行令牌板
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 import time
 
@@ -14,6 +14,7 @@ import time
 @dataclass
 class ExecutionToken:
     """执行令牌"""
+
     token_id: str
     atom_id: str
     round: int

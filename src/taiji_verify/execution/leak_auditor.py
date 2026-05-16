@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class LayerStatus(str, Enum):
     """层级状态"""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -22,6 +22,7 @@ class LayerStatus(str, Enum):
 @dataclass
 class AuditResult:
     """审计结果"""
+
     leak_detected: bool
     upstream_status: LayerStatus
     reason: str
@@ -103,6 +104,4 @@ class LeakAuditor:
 
     def reset(self) -> None:
         """重置"""
-        self._layer_status = {
-            layer: LayerStatus.PENDING for layer in self.LAYER_ORDER
-        }
+        self._layer_status = {layer: LayerStatus.PENDING for layer in self.LAYER_ORDER}

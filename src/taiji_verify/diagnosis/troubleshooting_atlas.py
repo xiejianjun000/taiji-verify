@@ -14,6 +14,7 @@ from taiji_verify.diagnosis.global_fix_map import FixEntry, GlobalFixMap
 @dataclass
 class DiagnosisNode:
     """诊断节点"""
+
     symptom: str
     possible_causes: list[str]
     recommended_fixes: list[str]
@@ -23,6 +24,7 @@ class DiagnosisNode:
 @dataclass
 class DiagnosisResult:
     """诊断结果"""
+
     primary_cause: Optional[str]
     all_causes: list[str]
     recommended_fixes: list[FixEntry]
@@ -48,28 +50,22 @@ class TroubleshootingAtlas:
         return {
             "检索": {
                 "causes": ["检索失败", "相关性不足", "过时知识"],
-                "fixes": ["FM01", "FM02", "FM03"]
+                "fixes": ["FM01", "FM02", "FM03"],
             },
             "推理": {
                 "causes": ["逻辑跳跃", "循环推理", "幻觉生成"],
-                "fixes": ["FM10", "FM11", "FM01"]
+                "fixes": ["FM10", "FM11", "FM01"],
             },
             "记忆": {
                 "causes": ["记忆混淆", "上下文丢失", "记忆污染"],
-                "fixes": ["FM06", "FM07", "FM08"]
+                "fixes": ["FM06", "FM07", "FM08"],
             },
             "Agent": {
                 "causes": ["角色错位", "目标漂移", "拒绝执行"],
-                "fixes": ["FM12", "FM13", "FM14"]
+                "fixes": ["FM12", "FM13", "FM14"],
             },
-            "工具": {
-                "causes": ["工具误用", "API调用失败"],
-                "fixes": ["FM15", "FM16"]
-            },
-            "安全": {
-                "causes": ["安全边界突破"],
-                "fixes": ["FM08"]
-            },
+            "工具": {"causes": ["工具误用", "API调用失败"], "fixes": ["FM15", "FM16"]},
+            "安全": {"causes": ["安全边界突破"], "fixes": ["FM08"]},
         }
 
     def get_diagnosis_tree(self) -> DiagnosisNode:

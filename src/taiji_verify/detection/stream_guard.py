@@ -11,12 +11,12 @@ Stream Guard - 流式守卫
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class GuardConfig:
     """守卫配置"""
+
     token_threshold: int = 100
     check_interval: int = 50
 
@@ -24,6 +24,7 @@ class GuardConfig:
 @dataclass
 class GuardResult:
     """守卫结果"""
+
     detected: bool
     risk_level: str = "low"
     details: dict = field(default_factory=dict)
@@ -85,9 +86,9 @@ class StreamGuard:
             detected=risk > 0.5,
             risk_level="high" if risk > 0.5 else "low",
             details={
-                'token_count': self._total_tokens,
-                'buffer_size': len(self._buffer),
-                'risk_score': risk,
+                "token_count": self._total_tokens,
+                "buffer_size": len(self._buffer),
+                "risk_score": risk,
             },
         )
 
@@ -99,16 +100,18 @@ class StreamGuard:
     def _estimate_tokens(self, text: str) -> int:
         """估算token数（简单实现）"""
         import re
-        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
-        english_words = len(re.findall(r'[a-zA-Z]+', text))
+
+        chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+        english_words = len(re.findall(r"[a-zA-Z]+", text))
         return chinese_chars + english_words
 
     def _assess_risk(self, text: str) -> float:
         """评估风险"""
         suspicious_count = 0
         import re
-        if re.search(r'GB\d{5,}', text):
+
+        if re.search(r"GB\d{5,}", text):
             suspicious_count += 1
-        if re.search(r'据.*报道', text):
+        if re.search(r"据.*报道", text):
             suspicious_count += 1
         return min(suspicious_count * 0.3, 1.0)

@@ -7,11 +7,10 @@ Coupler - 耦合器
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class ContractViolation(Exception):
     """合约违反异常"""
+
     pass
 
 

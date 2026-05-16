@@ -19,6 +19,7 @@ from typing import Optional
 @dataclass
 class TraceResult:
     """溯源结果"""
+
     matched_entry_ids: list[str]
     coverage: float
     similarity_scores: list[float]
@@ -28,6 +29,7 @@ class TraceResult:
 @dataclass
 class KnowledgeSource:
     """知识源"""
+
     entry_id: str
     content: str
     keywords: list[str]
@@ -83,7 +85,7 @@ class SourceTracer:
             if keyword in self._inverted_index:
                 matched_ids.update(self._inverted_index[keyword])
 
-        matched_ids = list(matched_ids)[:self.max_sources]
+        matched_ids = list(matched_ids)[: self.max_sources]
 
         coverage = len(matched_ids) / max(len(text_keywords), 1)
         similarity_scores = []
@@ -116,7 +118,8 @@ class SourceTracer:
         """提取关键词"""
         keywords = set()
         import re
-        tokens = re.findall(r'[\u4e00-\u9fff]+|[A-Za-z]+', text)
+
+        tokens = re.findall(r"[\u4e00-\u9fff]+|[A-Za-z]+", text)
         for token in tokens:
             if len(token) >= 2:
                 keywords.add(token)

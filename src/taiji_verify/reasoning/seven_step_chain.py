@@ -14,16 +14,17 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 import numpy as np
 
-from taiji_verify.delta_s import DeltaSCalculator, GateZone
+from taiji_verify.delta_s import DeltaSCalculator
 from taiji_verify.kun_guard import KunGuard
 from taiji_verify.qian_advance import QianAdvance
-from taiji_verify.fu_return import FuReturn, RecoveryState
-from taiji_verify.xun_tune import XunTune, TunedOutput
+from taiji_verify.fu_return import FuReturn
+from taiji_verify.xun_tune import XunTune
 
 
 @dataclass
 class StepInput:
     """步骤输入"""
+
     text: str
     goal: str
     context: Optional[dict] = None
@@ -33,6 +34,7 @@ class StepInput:
 @dataclass
 class StepOutput:
     """步骤输出"""
+
     step_name: str
     result_data: Any = None
     delta_s: Optional[float] = None
@@ -45,6 +47,7 @@ class StepOutput:
 @dataclass
 class ChainConfig:
     """链配置"""
+
     max_retries: int = 3
     checkpoint_enabled: bool = True
     semantic_firewall_enabled: bool = True
@@ -54,6 +57,7 @@ class ChainConfig:
 @dataclass
 class ChainResult:
     """链执行结果"""
+
     final_output: Any
     steps_completed: int
     step_results: list[StepOutput]
@@ -93,7 +97,6 @@ class SevenStepChain:
 
     def _init_layer1_modules(self) -> None:
         """初始化Layer 1核心模块"""
-        from taiji_verify.delta_s import DeltaSCalculator
         from taiji_verify.reasoning.coupler import Coupler
 
         self.delta_s_calculator = DeltaSCalculator(
@@ -217,7 +220,7 @@ class SevenStepChain:
             residual = delta_s
             hazard, needs_block = self.kun_guard.check_hazard(residual)
 
-            hazard_level = hazard.value if hasattr(hazard, 'value') else "LOW"
+            hazard_level = hazard.value if hasattr(hazard, "value") else "LOW"
 
             if hazard_level in ["HIGH", "CRITICAL"]:
                 correction_applied = True
@@ -269,9 +272,7 @@ class SevenStepChain:
         delta_s = prev_output.delta_s if prev_output else 0.5
         gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
 
-        tuned_output = self.xun_tune.modulate_single(
-            np.random.randn(self.config.embedding_dim)
-        )
+        tuned_output = self.xun_tune.modulate_single(np.random.randn(self.config.embedding_dim))
 
         modulation_factor = tuned_output.gate_factor
         attention_rebalanced = modulation_factor < 0.8
@@ -300,13 +301,9 @@ class SevenStepChain:
 
         state_history = [np.array([delta_s])]
         lyapunov = self.fu_return.compute_lyapunov_exponent(
-            state_history=state_history,
-            delta_t=0.1
+            state_history=state_history, delta_t=0.1
         )
-        recovery_state = self.fu_return.detect_crash(
-            lyapunov=lyapunov,
-            residual=delta_s
-        )
+        recovery_state = self.fu_return.detect_crash(lyapunov=lyapunov, residual=delta_s)
 
         crash_detected = delta_s > 0.9 or gate_zone == "DANGER"
         recovered = recovery_state.value in ["normal", "recovered", "WARNING"]
@@ -335,9 +332,7 @@ class SevenStepChain:
             prev_output = output
             self.current_step = step_num
 
-        corrections_applied = [
-            sr.step_name for sr in step_results if sr.correction_applied
-        ]
+        corrections_applied = [sr.step_name for sr in step_results if sr.correction_applied]
 
         return ChainResult(
             final_output=prev_output.result_data if prev_output else None,
@@ -352,7 +347,8 @@ class SevenStepChain:
     def _extract_entities(self, text: str) -> list[str]:
         """提取实体"""
         import re
-        entities = re.findall(r'[\u4e00-\u9fff]+', text)
+
+        entities = re.findall(r"[\u4e00-\u9fff]+", text)
         return [e for e in entities if len(e) >= 2]
 
     def _extract_keywords(self, text: str) -> list[str]:

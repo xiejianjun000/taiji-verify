@@ -6,14 +6,15 @@ save/restore/gate_check。门控：某些转换只在特定ΔS区间允许。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Any
+from dataclasses import dataclass
+from typing import Optional
 from datetime import datetime
 
 
 @dataclass
 class Checkpoint:
     """检查点"""
+
     id: str
     step_name: str
     data: dict

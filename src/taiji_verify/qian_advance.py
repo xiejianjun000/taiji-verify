@@ -26,6 +26,7 @@ from typing import Optional, List, Dict, Tuple
 @dataclass
 class PerturbationResult:
     """单路径扰动结果"""
+
     path_id: int
     perturbed_vector: np.ndarray
     distance_change: float
@@ -35,6 +36,7 @@ class PerturbationResult:
 @dataclass
 class QianAdvanceResult:
     """乾进演进结果"""
+
     original_vector: np.ndarray
     evolved_vector: np.ndarray
     stability_score: float
@@ -93,11 +95,11 @@ class QianAdvance:
     def _generate_perturbation(self, vector: np.ndarray, seed: int) -> np.ndarray:
         """
         生成单个扰动向量
-        
+
         Args:
             vector: 原始向量
             seed: 随机种子
-        
+
         Returns:
             扰动后的向量
         """
@@ -113,11 +115,11 @@ class QianAdvance:
     ) -> float:
         """
         计算距离变化量 Δ
-        
+
         Args:
             original: 原始向量
             perturbed: 扰动后向量
-        
+
         Returns:
             距离变化量
         """
@@ -134,48 +136,50 @@ class QianAdvance:
     def perturb(self, vector: np.ndarray) -> List[PerturbationResult]:
         """
         执行多路径扰动
-        
+
         Args:
             vector: 输入向量
-        
+
         Returns:
             各路径扰动结果列表
         """
         results = []
-        
+
         for path_id in range(self.k_paths):
             perturbed = self._generate_perturbation(vector, path_id)
             distance_change = self._compute_distance_change(vector, perturbed)
             similarity = self._compute_similarity(vector, perturbed)
-            
-            results.append(PerturbationResult(
-                path_id=path_id,
-                perturbed_vector=perturbed,
-                distance_change=distance_change,
-                similarity=similarity,
-            ))
-        
+
+            results.append(
+                PerturbationResult(
+                    path_id=path_id,
+                    perturbed_vector=perturbed,
+                    distance_change=distance_change,
+                    similarity=similarity,
+                )
+            )
+
         return results
 
     def compute_stability(self, path_results: List[PerturbationResult]) -> float:
         """
         计算稳定性得分
-        
+
         公式: f_S = 1 / (1 + mean(Δ))
-        
+
         Args:
             path_results: 各路径扰动结果
-        
+
         Returns:
             稳定性得分 ∈ [0, 1]
         """
         if not path_results:
             return 1.0
-        
+
         delta_values = [pr.distance_change for pr in path_results]
         mean_delta = np.mean(delta_values)
         stability = 1.0 / (1.0 + mean_delta)
-        
+
         return float(min(max(stability, 0.0), 1.0))
 
     def evolve(
@@ -185,11 +189,11 @@ class QianAdvance:
     ) -> QianAdvanceResult:
         """
         执行语义演进
-        
+
         Args:
             vector: 输入向量
             target_similarity: 目标相似度阈值
-        
+
         Returns:
             QianAdvanceResult 演进结果
         """
@@ -200,27 +204,27 @@ class QianAdvance:
 
         for iteration in range(self.max_iterations):
             iterations = iteration + 1
-            
+
             # 执行扰动
             paths = self.perturb(current_vector)
             path_results.extend(paths)
-            
+
             # 计算稳定性
             stability = self.compute_stability(paths)
-            
+
             # 检查收敛
             if stability >= self.stability_threshold:
                 converged = True
                 break
-            
+
             # 检查相似度是否达标
             similarities = [pr.similarity for pr in paths]
             avg_similarity = np.mean(similarities)
-            
+
             if avg_similarity >= target_similarity:
                 converged = True
                 break
-            
+
             # 向更稳定的方向演进
             stable_paths = [pr for pr in paths if pr.similarity > 0.8]
             if stable_paths:
@@ -228,8 +232,8 @@ class QianAdvance:
                 current_vector = current_vector / (norm(current_vector) + 1e-10)
 
         # 最终稳定性评估
-        final_stability = self.compute_stability(path_results[-self.k_paths:])
-        
+        final_stability = self.compute_stability(path_results[-self.k_paths :])
+
         return QianAdvanceResult(
             original_vector=vector,
             evolved_vector=current_vector,
@@ -238,16 +242,16 @@ class QianAdvance:
             converged=converged,
             iterations=iterations,
             metadata={
-                'k_paths': self.k_paths,
-                'noise_scale': self.noise_scale,
-                'target_similarity': target_similarity,
+                "k_paths": self.k_paths,
+                "noise_scale": self.noise_scale,
+                "target_similarity": target_similarity,
             },
         )
 
     def analyze_paths(self, vector: np.ndarray) -> Tuple[float, float, float]:
         """
         分析扰动路径特征
-        
+
         Returns:
             (平均距离变化, 平均相似度, 稳定性得分)
         """
@@ -255,7 +259,7 @@ class QianAdvance:
         avg_delta = np.mean([pr.distance_change for pr in paths])
         avg_sim = np.mean([pr.similarity for pr in paths])
         stability = self.compute_stability(paths)
-        
+
         return float(avg_delta), float(avg_sim), float(stability)
 
     def optimize_vector(
@@ -265,11 +269,11 @@ class QianAdvance:
     ) -> np.ndarray:
         """
         优化向量稳定性
-        
+
         Args:
             vector: 输入向量
             iterations: 迭代次数，默认为max_iterations
-        
+
         Returns:
             优化后的向量
         """
@@ -283,11 +287,11 @@ class QianAdvance:
     ) -> List[QianAdvanceResult]:
         """
         批量执行语义演进
-        
+
         Args:
             vectors: 向量列表
             target_similarity: 目标相似度阈值
-        
+
         Returns:
             各向量演进结果列表
         """

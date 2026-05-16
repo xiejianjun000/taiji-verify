@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Any
+from typing import Callable, Optional
 import jieba
 
 
 @dataclass
 class Rule:
     """验证规则"""
+
     id: str
     pattern: str
     check: Callable[[str, re.Match], bool]
@@ -35,6 +36,7 @@ class Rule:
 @dataclass
 class VerificationRule:
     """匹配到的验证规则"""
+
     rule: Rule
     match: re.Match | None
     passed: bool
@@ -46,6 +48,7 @@ class VerificationRule:
 @dataclass
 class KnowledgeMatch:
     """知识匹配结果"""
+
     entry_id: str
     coverage: float
     similarity: float
@@ -55,6 +58,7 @@ class KnowledgeMatch:
 @dataclass
 class VerificationResult:
     """验证结果"""
+
     passed: bool
     confidence: float
     matched_rules: list[VerificationRule]
@@ -67,6 +71,7 @@ class VerificationResult:
 @dataclass
 class SymbolConsistencyResult:
     """符号一致性结果"""
+
     passed_weight: int
     total_weight: int
     symbol_consistency: float
@@ -76,6 +81,7 @@ class SymbolConsistencyResult:
 @dataclass
 class KnowledgeEntry:
     """知识库条目"""
+
     entry_id: str
     content: str
     keywords: list[str]
@@ -179,14 +185,16 @@ class RuleEngine:
                     if rule_corrected:
                         corrected_text = rule_corrected
 
-                matched_rules.append(VerificationRule(
-                    rule=rule,
-                    match=match,
-                    passed=passed,
-                    confidence=confidence,
-                    correction_applied=correction_applied,
-                    corrected_text=rule_corrected,
-                ))
+                matched_rules.append(
+                    VerificationRule(
+                        rule=rule,
+                        match=match,
+                        passed=passed,
+                        confidence=confidence,
+                        correction_applied=correction_applied,
+                        corrected_text=rule_corrected,
+                    )
+                )
 
                 total_weight += rule.weight
                 if passed:
@@ -206,8 +214,8 @@ class RuleEngine:
             knowledge_matches=knowledge_matches,
             corrected_text=corrected_text if corrected_text != text else None,
             metadata={
-                'total_weight': total_weight,
-                'passed_weight': passed_weight,
+                "total_weight": total_weight,
+                "passed_weight": passed_weight,
             },
         )
 
@@ -265,11 +273,11 @@ class RuleEngine:
         symbols: list[str] = []
 
         patterns = [
-            (r'\d+(?:\.\d+)?%', 'percentage'),
-            (r'\d+(?:\.\d+)?', 'number'),
-            (r'[A-Z]{2,}[A-Z0-9]*', 'abbreviation'),
-            (r'GB[A-Z0-9]+', 'standard'),
-            (r'第[一二三四五六七八九十百千万\d]+[条章节款]', 'clause'),
+            (r"\d+(?:\.\d+)?%", "percentage"),
+            (r"\d+(?:\.\d+)?", "number"),
+            (r"[A-Z]{2,}[A-Z0-9]*", "abbreviation"),
+            (r"GB[A-Z0-9]+", "standard"),
+            (r"第[一二三四五六七八九十百千万\d]+[条章节款]", "clause"),
         ]
 
         for pattern, label in patterns:
@@ -300,14 +308,20 @@ class RuleEngine:
 
             if intersection:
                 coverage = len(intersection) / len(entry_keywords) if entry_keywords else 0
-                similarity = len(intersection) / len(text_keywords | entry_keywords) if text_keywords and entry_keywords else 0
+                similarity = (
+                    len(intersection) / len(text_keywords | entry_keywords)
+                    if text_keywords and entry_keywords
+                    else 0
+                )
 
-                matches.append(KnowledgeMatch(
-                    entry_id=entry_id,
-                    coverage=coverage,
-                    similarity=similarity,
-                    matched_keywords=list(intersection),
-                ))
+                matches.append(
+                    KnowledgeMatch(
+                        entry_id=entry_id,
+                        coverage=coverage,
+                        similarity=similarity,
+                        matched_keywords=list(intersection),
+                    )
+                )
 
         matches.sort(key=lambda m: m.similarity, reverse=True)
         return matches[:10]

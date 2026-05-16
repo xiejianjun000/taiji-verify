@@ -25,6 +25,7 @@ from datetime import datetime
 @dataclass
 class EcoRule:
     """生态环境规则"""
+
     id: str
     name: str
     pattern: str
@@ -40,7 +41,7 @@ class FakeStandardRule(EcoRule):
         super().__init__(
             id="R001",
             name="假标准编号",
-            pattern=r'GB(\d{4,})',
+            pattern=r"GB(\d{4,})",
             check=self._check_impl,
             correction=self._correct_impl,
             base_confidence=0.95,
@@ -67,7 +68,7 @@ class TimeTravelRule(EcoRule):
         super().__init__(
             id="R003",
             name="时间穿越",
-            pattern=r'(\d{4})年',
+            pattern=r"(\d{4})年",
             check=self._check_impl,
             correction=self._correct_impl,
             base_confidence=0.90,
@@ -88,19 +89,19 @@ class SelfContradictionRule(EcoRule):
     """R004: 自相矛盾检测"""
 
     CONTRADICTION_PAIRS = [
-        ('有毒', '无害'),
-        ('正确', '错误'),
-        ('是', '不是'),
-        ('有', '没有'),
-        ('可以', '不可以'),
-        ('必须', '不必'),
+        ("有毒", "无害"),
+        ("正确", "错误"),
+        ("是", "不是"),
+        ("有", "没有"),
+        ("可以", "不可以"),
+        ("必须", "不必"),
     ]
 
     def __init__(self):
         super().__init__(
             id="R004",
             name="自相矛盾",
-            pattern=r'.+',
+            pattern=r".+",
             check=self._check_impl,
             correction=self._correct_impl,
             base_confidence=0.92,
@@ -123,7 +124,7 @@ class WrongLegalStatusRule(EcoRule):
         super().__init__(
             id="R005",
             name="错误法律状态",
-            pattern=r'(.*?(?:法|法规|条例))(未颁布|未实施)',
+            pattern=r"(.*?(?:法|法规|条例))(未颁布|未实施)",
             check=self._check_impl,
             correction=self._correct_impl,
             base_confidence=0.95,
@@ -131,34 +132,34 @@ class WrongLegalStatusRule(EcoRule):
 
     def _check_impl(self, text: str, match: Optional[re.Match]) -> bool:
         if match:
-            return '未颁布' in match.group(0) or '未实施' in match.group(0)
+            return "未颁布" in match.group(0) or "未实施" in match.group(0)
         return False
 
     def _correct_impl(self, match: Optional[re.Match], text: str) -> str:
-        return text.replace('未颁布', '已颁布').replace('未实施', '已实施')
+        return text.replace("未颁布", "已颁布").replace("未实施", "已实施")
 
 
 class FakeHistoryRule(EcoRule):
     """R006: 虚假历史检测"""
 
     KNOWN_LAWS = {
-        '环境保护法': 1989,
-        '大气污染防治法': 1987,
-        '水污染防治法': 1984,
+        "环境保护法": 1989,
+        "大气污染防治法": 1987,
+        "水污染防治法": 1984,
     }
 
     def __init__(self):
         super().__init__(
             id="R006",
             name="虚假历史",
-            pattern=r'(.*?)(202[5-9]|203\d)年(发布|实施|颁布)',
+            pattern=r"(.*?)(202[5-9]|203\d)年(发布|实施|颁布)",
             check=self._check_impl,
             correction=self._correct_impl,
             base_confidence=0.90,
         )
 
     def _check_impl(self, text: str, match: Optional[re.Match]) -> bool:
-        if match and '2025' in match.group(0):
+        if match and "2025" in match.group(0):
             for law, year in self.KNOWN_LAWS.items():
                 if law in text:
                     return True

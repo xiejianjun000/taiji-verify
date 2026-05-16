@@ -40,12 +40,18 @@ class GlobalFixMap:
         fixes = fix_map.search("embedding")
     """
 
+    DEFAULT_DATA_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+        "data", "fix_map_entries.json"
+    )
+
     def __init__(self, data_path: Optional[str] = None):
         self.entries: list[FixEntry] = []
-        if data_path and os.path.exists(data_path):
-            self._load_from_file(data_path)
+        path = data_path or self.DEFAULT_DATA_PATH
+        if os.path.exists(path):
+            self._load_from_file(path)
         else:
-            self._init_default_entries()
+            self._init_minimal_entries()
 
     def _load_from_file(self, data_path: str) -> None:
         """从文件加载"""
@@ -55,80 +61,17 @@ class GlobalFixMap:
                 FixEntry(**item) for item in data
             ]
 
-    def _init_default_entries(self) -> None:
-        """初始化默认条目"""
+    def _init_minimal_entries(self) -> None:
+        """初始化最小条目（文件不存在时的fallback）"""
         self.entries = [
             FixEntry(
                 id="F001",
                 category="Embeddings",
                 failure_mode_id="FM01",
-                description="优化embedding维度",
+                description="增加embedding维度",
                 priority=3,
-                steps=["选择合适维度", "重新训练模型"],
+                steps=["评估当前维度", "扩展到768维", "重新训练"],
                 references=["ref1"]
-            ),
-            FixEntry(
-                id="F002",
-                category="RAG",
-                failure_mode_id="FM02",
-                description="增加检索召回率",
-                priority=4,
-                steps=["扩展检索范围", "优化查询语句"],
-                references=["ref2"]
-            ),
-            FixEntry(
-                id="F003",
-                category="Reasoning&Memory",
-                failure_mode_id="FM10",
-                description="打断循环推理链",
-                priority=3,
-                steps=["检测循环模式", "注入外部事实"],
-                references=["ref3"]
-            ),
-            FixEntry(
-                id="F004",
-                category="Language",
-                failure_mode_id="FM13",
-                description="统一输出语言",
-                priority=2,
-                steps=["检测语言不一致", "强制语言设置"],
-                references=["ref4"]
-            ),
-            FixEntry(
-                id="F005",
-                category="Multi-Agent",
-                failure_mode_id="FM07",
-                description="协调多Agent通信",
-                priority=4,
-                steps=["定义通信协议", "实现状态同步"],
-                references=["ref5"]
-            ),
-            FixEntry(
-                id="F006",
-                category="Chunking",
-                failure_mode_id="FM03",
-                description="优化文档分块策略",
-                priority=3,
-                steps=["分析内容结构", "调整分块大小"],
-                references=["ref6"]
-            ),
-            FixEntry(
-                id="F007",
-                category="Embeddings",
-                failure_mode_id="FM05",
-                description="补充知识库条目",
-                priority=4,
-                steps=["识别知识缺口", "添加相关知识"],
-                references=["ref7"]
-            ),
-            FixEntry(
-                id="F008",
-                category="RAG",
-                failure_mode_id="FM01",
-                description="增强检索相关性",
-                priority=5,
-                steps=["重排序结果", "过滤低相关度"],
-                references=["ref8"]
             ),
         ]
 
@@ -158,3 +101,17 @@ class GlobalFixMap:
     def get_by_priority(self, priority: int) -> list[FixEntry]:
         """按优先级获取"""
         return [e for e in self.entries if e.priority >= priority]
+
+    def get_category_stats(self) -> dict[str, int]:
+        """获取各类别统计"""
+        stats = {}
+        for entry in self.entries:
+            stats[entry.category] = stats.get(entry.category, 0) + 1
+        return stats
+
+    def get_failure_mode_stats(self) -> dict[str, int]:
+        """获取各失败模式统计"""
+        stats = {}
+        for entry in self.entries:
+            stats[entry.failure_mode_id] = stats.get(entry.failure_mode_id, 0) + 1
+        return stats

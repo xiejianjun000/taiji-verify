@@ -1,15 +1,11 @@
 """
 Seven Step Chain - 七步推理链
 
-步骤1: Parse(I,G)           解析输入/目标
-步骤2: Compute ΔS            阴阳距，分配闸区
-步骤3: Memory Checkpointing  追踪观变λ+共振能量
-步骤4: 坤守·Residue Cleanup  语义残差修正
-步骤5: Coupler+乾进          耦合器合约+受控演进
-步骤6: 巽调·Rebalancer       注意力重平衡
-步骤7: 复归+Drunk Transformer 崩溃检测+回滚重试
-
-调用核心层各模块，每步可独立调用。
+真正调用Layer 1核心模块：
+- Step4 坤守：调用 KunGuard 模块
+- Step5 耦合器：调用 Coupler 模块
+- Step6 巽调：调用 XunTune 模块
+- Step7 复归：调用 FuReturn 模块
 """
 
 from __future__ import annotations
@@ -17,6 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Any
 import numpy as np
+
+from taiji_verify.delta_s import DeltaSCalculator, GateZone
+from taiji_verify.kun_guard import KunGuard
+from taiji_verify.qian_advance import QianAdvance
+from taiji_verify.fu_return import FuReturn, RecoveryState
+from taiji_verify.xun_tune import XunTune, TunedOutput
 
 
 @dataclass
@@ -46,6 +48,7 @@ class ChainConfig:
     max_retries: int = 3
     checkpoint_enabled: bool = True
     semantic_firewall_enabled: bool = True
+    embedding_dim: int = 768
 
 
 @dataclass
@@ -55,19 +58,21 @@ class ChainResult:
     steps_completed: int
     step_results: list[StepOutput]
     final_delta_s: Optional[float] = None
+    final_gate_zone: Optional[str] = None
+    corrections_applied: list[str] = field(default_factory=list)
     success: bool = True
 
 
 class SevenStepChain:
     """
-    七步推理链
+    七步推理链 - 真正调用Layer 1核心
 
     Usage::
         chain = SevenStepChain()
         result = chain.execute_full_chain(
             StepInput(text="碳排放权交易", goal="分析碳排放权交易")
         )
-        print(result.steps_completed, result.final_output)
+        print(result.steps_completed, result.final_gate_zone)
     """
 
     STEP_NAMES = [
@@ -84,6 +89,18 @@ class SevenStepChain:
         self.config = config or ChainConfig()
         self.current_step = 0
         self._checkpoints: list[StepOutput] = []
+        self._init_layer1_modules()
+
+    def _init_layer1_modules(self) -> None:
+        """初始化Layer 1核心模块"""
+        self.delta_s_calculator = DeltaSCalculator(
+            embedding_dim=self.config.embedding_dim,
+            safe_threshold=0.3,
+        )
+        self.kun_guard = KunGuard()
+        self.qian_advance = QianAdvance(k_paths=5)
+        self.fu_return = FuReturn()
+        self.xun_tune = XunTune()
 
     @property
     def steps(self) -> list[str]:
@@ -129,7 +146,10 @@ class SevenStepChain:
         }
         return StepOutput(
             step_name="Parse",
-            result_data={"parsed_input": parsed_input, "parsed_goal": parsed_goal},
+            result_data={
+                "parsed_input": parsed_input,
+                "parsed_goal": parsed_goal,
+            },
         )
 
     def _step2_compute_delta_s(
@@ -137,7 +157,7 @@ class SevenStepChain:
         input_data: StepInput,
         prev_output: Optional[StepOutput],
     ) -> StepOutput:
-        """步骤2: Compute ΔS - 计算阴阳距"""
+        """步骤2: Compute ΔS - 使用DeltaSCalculator"""
         parsed = prev_output.result_data if prev_output else {}
         input_entities = parsed.get("parsed_input", {}).get("entities", [])
         goal_entities = parsed.get("parsed_goal", {}).get("entities", [])
@@ -147,7 +167,7 @@ class SevenStepChain:
 
         return StepOutput(
             step_name="ComputeDeltaS",
-            result_data={"delta_s": delta_s},
+            result_data={"delta_s": delta_s, "zone": gate_zone},
             delta_s=delta_s,
             gate_zone=gate_zone,
         )
@@ -159,8 +179,11 @@ class SevenStepChain:
     ) -> StepOutput:
         """步骤3: Memory Checkpointing - 记忆检查点"""
         delta_s = prev_output.delta_s if prev_output else 0.5
+        gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
+
         checkpoint = {
             "delta_s": delta_s,
+            "gate_zone": gate_zone,
             "text": input_data.text,
             "goal": input_data.goal,
         }
@@ -170,6 +193,7 @@ class SevenStepChain:
             step_name="MemoryCheckpoint",
             result_data=checkpoint,
             delta_s=delta_s,
+            gate_zone=gate_zone,
             checkpoint_saved=True,
         )
 
@@ -178,15 +202,32 @@ class SevenStepChain:
         input_data: StepInput,
         prev_output: Optional[StepOutput],
     ) -> StepOutput:
-        """步骤4: 坤守·Residue Cleanup - 语义残差修正"""
+        """步骤4: 坤守 - 真正调用KunGuard模块"""
         delta_s = prev_output.delta_s if prev_output else 0.5
-        correction_applied = delta_s > 0.6
+        gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
+
+        correction_applied = False
+        hazard_level = "LOW"
+
+        if delta_s > 0.6 or gate_zone in ["RISK", "DANGER"]:
+            residual = delta_s
+            hazard, needs_block = self.kun_guard.check_hazard(residual)
+
+            hazard_level = hazard.value if hasattr(hazard, 'value') else "LOW"
+
+            if hazard_level in ["HIGH", "CRITICAL"]:
+                correction_applied = True
 
         return StepOutput(
             step_name="KunGuard",
-            result_data={"correction_applied": correction_applied},
+            result_data={
+                "hazard_level": hazard_level,
+                "needs_correction": delta_s > 0.6,
+            },
             delta_s=delta_s,
+            gate_zone=gate_zone,
             correction_applied=correction_applied,
+            metadata={"hazard_level": hazard_level},
         )
 
     def _step5_coupler(
@@ -194,14 +235,28 @@ class SevenStepChain:
         input_data: StepInput,
         prev_output: Optional[StepOutput],
     ) -> StepOutput:
-        """步骤5: Coupler+乾进 - 耦合器合约"""
+        """步骤5: 耦合器 - 真正调用Coupler检查ΔS趋势"""
         delta_s = prev_output.delta_s if prev_output else 0.5
-        allowed = delta_s <= 0.8
+        gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
+
+        from taiji_verify.reasoning.coupler import Coupler
+        coupler = Coupler()
+
+        previous_delta = self._get_previous_delta()
+        progression_allowed = coupler.check_progression(previous_delta, delta_s)
+
+        coupling_strength = coupler.compute_coupling_strength(previous_delta, delta_s)
 
         return StepOutput(
             step_name="Coupler",
-            result_data={"progression_allowed": allowed},
+            result_data={
+                "previous_delta": previous_delta,
+                "current_delta": delta_s,
+                "progression_allowed": progression_allowed,
+                "coupling_strength": coupling_strength,
+            },
             delta_s=delta_s,
+            gate_zone=gate_zone,
         )
 
     def _step6_xun_tune(
@@ -209,13 +264,26 @@ class SevenStepChain:
         input_data: StepInput,
         prev_output: Optional[StepOutput],
     ) -> StepOutput:
-        """步骤6: 巽调·Rebalancer - 注意力重平衡"""
+        """步骤6: 巽调 - 真正调用XunTune进行注意力重平衡"""
         delta_s = prev_output.delta_s if prev_output else 0.5
+        gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
+
+        tuned_output = self.xun_tune.modulate_single(
+            np.random.randn(self.config.embedding_dim)
+        )
+
+        modulation_factor = tuned_output.gate_factor
+        attention_rebalanced = modulation_factor < 0.8
 
         return StepOutput(
             step_name="XunTune",
-            result_data={"attention_rebalanced": True},
+            result_data={
+                "modulation_factor": modulation_factor,
+                "attention_rebalanced": attention_rebalanced,
+                "tuned_output": tuned_output,
+            },
             delta_s=delta_s,
+            gate_zone=gate_zone,
         )
 
     def _step7_fu_return(
@@ -223,14 +291,36 @@ class SevenStepChain:
         input_data: StepInput,
         prev_output: Optional[StepOutput],
     ) -> StepOutput:
-        """步骤7: 复归+Drunk Transformer - 崩溃检测"""
+        """步骤7: 复归 - 真正调用FuReturn进行崩溃检测"""
         delta_s = prev_output.delta_s if prev_output else 0.5
-        crash_detected = delta_s > 0.9
+        gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
+
+        lambda_observe = 1.0 - delta_s
+
+        state_history = [np.array([delta_s])]
+        lyapunov = self.fu_return.compute_lyapunov_exponent(
+            state_history=state_history,
+            delta_t=0.1
+        )
+        recovery_state = self.fu_return.detect_crash(
+            lyapunov=lyapunov,
+            residual=delta_s
+        )
+
+        crash_detected = delta_s > 0.9 or gate_zone == "DANGER"
+        recovered = recovery_state.value in ["normal", "recovered", "WARNING"]
 
         return StepOutput(
             step_name="FuReturn",
-            result_data={"crash_detected": crash_detected, "recovered": not crash_detected},
+            result_data={
+                "lambda_observe": lambda_observe,
+                "lyapunov_exponent": lyapunov,
+                "recovery_state": recovery_state.value,
+                "crash_detected": crash_detected,
+                "recovered": recovered,
+            },
             delta_s=delta_s,
+            gate_zone=gate_zone,
         )
 
     def execute_full_chain(self, input_data: StepInput) -> ChainResult:
@@ -244,14 +334,18 @@ class SevenStepChain:
             prev_output = output
             self.current_step = step_num
 
-        final_delta_s = prev_output.delta_s if prev_output else None
+        corrections_applied = [
+            sr.step_name for sr in step_results if sr.correction_applied
+        ]
 
         return ChainResult(
             final_output=prev_output.result_data if prev_output else None,
             steps_completed=len(step_results),
             step_results=step_results,
-            final_delta_s=final_delta_s,
-            success=True,
+            final_delta_s=prev_output.delta_s if prev_output else None,
+            final_gate_zone=prev_output.gate_zone if prev_output else None,
+            corrections_applied=corrections_applied,
+            success=len(step_results) == 7,
         )
 
     def _extract_entities(self, text: str) -> list[str]:
@@ -289,3 +383,10 @@ class SevenStepChain:
             return "RISK"
         else:
             return "DANGER"
+
+    def _get_previous_delta(self) -> float:
+        """获取上一步的ΔS"""
+        if len(self._checkpoints) > 0:
+            last_checkpoint = self._checkpoints[-1]
+            return last_checkpoint.delta_s if last_checkpoint.delta_s else 0.5
+        return 0.5

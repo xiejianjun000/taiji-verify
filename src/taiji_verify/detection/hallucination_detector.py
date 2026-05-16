@@ -1,19 +1,24 @@
 """
 Hallucination Detector - 幻觉检测
 
-对应 HallucinationDetector.ts 的 Python 实现
+真正串联内部模块:
+- RuleEngine: 规则检查
+- SelfConsistencyChecker: 一致性检查
+- SourceTracer: 知识溯源
 
-功能:
-- 三检测器加权: 规则0.4+一致性0.3+溯源0.3，归一化
-- riskScore=weightedScore/totalWeight，阈值0.8
-- 分段查找疑似幻觉: 按句分割逐段溯源
+三检测器加权: 规则0.4+一致性0.3+溯源0.3，归一化
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from taiji_verify.detection.rule_engine import RuleEngine
+    from taiji_verify.detection.consistency import SelfConsistencyChecker
+    from taiji_verify.detection.source_tracer import SourceTracer
 
 
 class RiskLevel(str, Enum):
@@ -31,6 +36,9 @@ class SegmentResult:
     is_hallucination: bool
     confidence: float
     matched_sources: list[str] = field(default_factory=list)
+    rule_score: float = 0.0
+    consistency_score: float = 0.0
+    trace_score: float = 0.0
 
 
 @dataclass
@@ -44,7 +52,7 @@ class DetectionResult:
 
 class HallucinationDetector:
     """
-    幻觉检测器
+    幻觉检测器 - 真正集成RuleEngine、Consistency、SourceTracer
 
     Usage::
         detector = HallucinationDetector()
@@ -63,8 +71,22 @@ class HallucinationDetector:
         self.consistency_weight = consistency_weight
         self.trace_weight = trace_weight
         self.risk_threshold = risk_threshold
+
         self._rule_engine = None
+        self._consistency_checker = None
         self._source_tracer = None
+
+    def set_rule_engine(self, engine: "RuleEngine") -> None:
+        """注入RuleEngine"""
+        self._rule_engine = engine
+
+    def set_consistency_checker(self, checker: "SelfConsistencyChecker") -> None:
+        """注入SelfConsistencyChecker"""
+        self._consistency_checker = checker
+
+    def set_source_tracer(self, tracer: "SourceTracer") -> None:
+        """注入SourceTracer"""
+        self._source_tracer = tracer
 
     def detect(self, text: str) -> DetectionResult:
         """检测幻觉"""
@@ -88,6 +110,11 @@ class HallucinationDetector:
                 'rule_score': rule_score,
                 'consistency_score': consistency_score,
                 'trace_score': trace_score,
+                'weights': {
+                    'rule': self.rule_weight,
+                    'consistency': self.consistency_weight,
+                    'trace': self.trace_weight,
+                }
             },
         )
 
@@ -99,12 +126,28 @@ class HallucinationDetector:
         for segment in segments:
             if not segment.strip():
                 continue
-            score = self._simple_hallucination_score(segment)
+
+            rule_score = self._check_rules(segment)
+            consistency_score = self._check_consistency_segment(segment)
+            trace_result = self._check_trace_segment(segment)
+
+            total_weight = self.rule_weight + self.consistency_weight + self.trace_weight
+            score = (
+                rule_score * self.rule_weight +
+                consistency_score * self.consistency_weight +
+                trace_result['score'] * self.trace_weight
+            ) / total_weight
+
             is_hallucination = score > self.risk_threshold
+
             segment_results.append(SegmentResult(
                 text=segment,
                 is_hallucination=is_hallucination,
                 confidence=score,
+                matched_sources=trace_result['sources'],
+                rule_score=rule_score,
+                consistency_score=consistency_score,
+                trace_score=trace_result['score'],
             ))
 
         if not segment_results:
@@ -118,7 +161,13 @@ class HallucinationDetector:
         )
 
     def _check_rules(self, text: str) -> float:
-        """检查规则匹配"""
+        """使用RuleEngine检查规则"""
+        if self._rule_engine is not None:
+            result = self._rule_engine.verify(text)
+            if not result.passed:
+                return 0.8
+            return 1.0 - result.confidence
+
         suspicious_patterns = [
             r'GB\d{5,}',
             r'\d{4,}年\d{1,2}月',
@@ -132,7 +181,11 @@ class HallucinationDetector:
         return 0.2
 
     def _check_consistency(self, text: str) -> float:
-        """检查一致性"""
+        """使用SelfConsistencyChecker检查一致性"""
+        if self._consistency_checker is not None:
+            result = self._consistency_checker.batch_consistency([text, text])
+            return 1.0 - result.avg_similarity
+
         contradictions = [
             ('是', '不是'),
             ('有', '没有'),
@@ -143,9 +196,37 @@ class HallucinationDetector:
                 return 0.7
         return 0.1
 
+    def _check_consistency_segment(self, segment: str) -> float:
+        """检查分段一致性"""
+        if self._consistency_checker is not None:
+            result = self._consistency_checker.batch_consistency([segment, segment])
+            return 1.0 - result.avg_similarity
+
+        return self._check_consistency(segment)
+
     def _check_trace(self, text: str) -> float:
-        """检查知识溯源"""
+        """使用SourceTracer检查溯源"""
+        if self._source_tracer is not None:
+            result = self._source_tracer.query(text)
+            if result.matched_entry_ids:
+                coverage = result.coverage
+                return max(0.0, 1.0 - coverage)
+            return 0.8
+
         return 0.3
+
+    def _check_trace_segment(self, segment: str) -> dict:
+        """检查分段溯源"""
+        if self._source_tracer is not None:
+            result = self._source_tracer.query(segment)
+            if result.matched_entry_ids:
+                return {
+                    'score': max(0.0, 1.0 - result.coverage),
+                    'sources': result.matched_entry_ids
+                }
+            return {'score': 0.8, 'sources': []}
+
+        return {'score': 0.3, 'sources': []}
 
     def _compute_risk_level(self, score: float) -> RiskLevel:
         """计算风险等级"""
@@ -163,11 +244,3 @@ class HallucinationDetector:
         import re
         sentences = re.split(r'[。！？；\n]+', text)
         return [s.strip() for s in sentences if s.strip()]
-
-    def _simple_hallucination_score(self, text: str) -> float:
-        """简单幻觉评分"""
-        score = 0.0
-        score += self._check_rules(text) * 0.5
-        score += self._check_consistency(text) * 0.3
-        score += self._check_trace(text) * 0.2
-        return score

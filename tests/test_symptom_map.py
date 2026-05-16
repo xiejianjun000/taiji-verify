@@ -235,11 +235,11 @@ class TestReasoningCircularDetector:
 
     def test_circular_reasoning_detected(self):
         detector = ReasoningCircularDetector()
-        text = "A是正确的。因为B支持A。B是正确的。因为A支持B。"
+        text = "A是正确的因为B支持A。B是正确的因为A支持B。"
         result = detector.detect(text)
         assert result is not None
         assert result.pattern == FailurePattern.REASONING_CIRCULAR
-        assert result.confidence == 0.8
+        assert result.confidence == 0.85
 
     def test_no_circular(self):
         detector = ReasoningCircularDetector()
@@ -247,11 +247,18 @@ class TestReasoningCircularDetector:
         result = detector.detect(text)
         assert result is None
 
-    def test_nested_circular(self):
+    def test_normal_text_no_false_positive(self):
         detector = ReasoningCircularDetector()
-        text = "这是A。这是包含这是A的内容。"
+        text = "碳排放权交易管理办法规定碳排放权交易应当遵守本办法。本项目按照碳排放权交易管理办法执行。"
+        result = detector.detect(text)
+        assert result is None
+
+    def test_exact_duplicate_detected(self):
+        detector = ReasoningCircularDetector()
+        text = "这是正确的。这是正确的。"
         result = detector.detect(text)
         assert result is not None
+        assert result.pattern == FailurePattern.REASONING_CIRCULAR
 
 
 class TestReasoningHallucinationDetector:

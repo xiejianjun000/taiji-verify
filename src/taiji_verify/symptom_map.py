@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict
@@ -237,19 +238,54 @@ class ReasoningCircularDetector(Detector):
     pattern = FailurePattern.REASONING_CIRCULAR
 
     def detect(self, input_text: str, context: Optional[Dict] = None) -> Optional[FailureDetection]:
-        sentences = input_text.split("。")
-        for i, sentence in enumerate(sentences):
+        sentences = [s.strip() for s in input_text.split("。") if s.strip()]
+        if len(sentences) < 2:
+            return None
+
+        for i, sent_i in enumerate(sentences):
             for j in range(i + 1, len(sentences)):
-                if sentence in sentences[j] or sentences[j] in sentence:
+                sent_j = sentences[j]
+                if self._is_circular_pair(sent_i, sent_j):
                     return FailureDetection(
                         pattern=self.pattern,
                         level=FailureLevel.REASONING,
-                        confidence=0.8,
-                        description="检测到循环推理，后续结论重复或包含前面的陈述",
-                        suggested_fix="重构推理链，确保每个步骤都提供新信息",
-                        evidence=[f"句子{i + 1}与句子{j + 1}存在重复"],
+                        confidence=0.85,
+                        description="检测到循环论证，两个陈述互相依赖形成闭环",
+                        suggested_fix="重构推理链，确保推理有独立的外部支撑",
+                        evidence=[f"句子{i + 1}与句子{j + 1}形成循环论证"],
                     )
         return None
+
+    def _is_circular_pair(self, sent1: str, sent2: str) -> bool:
+        """检测两个句子是否形成循环论证"""
+        if len(sent1) < 5 or len(sent2) < 5:
+            return False
+
+        if sent1 == sent2:
+            return True
+
+        def get_chars(s):
+            return set(c for c in s if c.isalnum())
+
+        chars1 = get_chars(sent1)
+        chars2 = get_chars(sent2)
+        common = chars1 & chars2
+        overlap = len(common) / max(len(chars1), len(chars2), 1)
+
+        if overlap > 0.95:
+            return True
+
+        parts1 = sent1.split("因为")
+        parts2 = sent2.split("因为")
+        if len(parts1) > 1 and len(parts2) > 1:
+            conclusion1 = parts1[0].strip()
+            reason1 = parts1[1].split("，")[0].split("。")[0].strip()
+            conclusion2 = parts2[0].strip()
+            reason2 = parts2[1].split("，")[0].split("。")[0].strip()
+            if conclusion1 == reason2 and conclusion2 == reason1:
+                return True
+
+        return False
 
 
 class ReasoningHallucinationDetector(Detector):
@@ -290,8 +326,6 @@ class ReasoningMathErrorDetector(Detector):
     pattern = FailurePattern.REASONING_MATH_ERROR
 
     def detect(self, input_text: str, context: Optional[Dict] = None) -> Optional[FailureDetection]:
-        import re
-
         # 简单的数字关系检测
         patterns = [
             (r"(\d+)\s*[+\-*/]\s*(\d+)\s*=\s*(\d+)", lambda m: self._check_math(m)),

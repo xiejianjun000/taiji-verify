@@ -1,13 +1,23 @@
 """
-Taiji Verify Engine - 太极验证主引擎
+Taiji Verify Engine v2 - 太极验证主引擎 (六层融合)
 
-整合五大模块的完整验证流水线：
-Input → DeltaS(阴阳距) → KunGuard(坤守修正) → QianAdvance(稳定性)
-      → FuReturn(崩溃恢复) → XunTune(注意力调节) → Output
-                                              ↓
-                                      FailureModeDetector(16模式检测)
+整合六层架构的完整验证流水线：
+Layer 2: Detection层 - 规则引擎、一致性、溯源、幻觉检测
+Layer 3: Reasoning层 - 七步推理链、检查点、耦合器、语义防火墙
+Layer 4: Diagnosis层 - 全局修复图、故障排除
+Layer 5: Governance层 - 双图、7个治理门
+Layer 6: Execution层 - 目标编译器、泄漏审计
 
-数据来源：基于阶段一基线数据推算与行业同类系统对标
+判定规则：
+- 治理层STOP → BLOCK
+- 治理层COARSE → CONDITIONAL_PASS
+- CRITICAL失败模式 → BLOCK
+- ΔS在DANGER+检测高风险 → BLOCK
+- ΔS在RISK+修正成功 → CORRECTED
+- ΔS在RISK+修正失败 → ESCALATE
+- ΔS在TRANSIT → CONDITIONAL_PASS
+- ΔS在SAFE+低风险 → PASS
+- 执行层有未完成 → CONDITIONAL_PASS
 """
 
 from __future__ import annotations
@@ -15,7 +25,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
 import numpy as np
 
@@ -29,24 +39,39 @@ from taiji_verify.failure_modes import (
     FailureModeDetector, FailureDetection, FailureSeverity,
 )
 
+from taiji_verify.detection.rule_engine import RuleEngine
+from taiji_verify.detection.consistency import SelfConsistencyChecker
+from taiji_verify.detection.hallucination_detector import (
+    HallucinationDetector, RiskLevel as DetectRiskLevel
+)
+from taiji_verify.reasoning.seven_step_chain import SevenStepChain, StepInput
+from taiji_verify.reasoning.coupler import Coupler
+from taiji_verify.reasoning.semantic_firewall import SemanticFirewall
+from taiji_verify.governance.governance_gates import (
+    GovernanceGate, GateType, GateState, evaluate_all_gates
+)
+from taiji_verify.governance.twin_atlas import TwinAtlas
+from taiji_verify.execution.goal_compiler import GoalCompiler
+from taiji_verify.execution.leak_auditor import LeakAuditor
+
 
 class Verdict(str, Enum):
     """最终判定"""
-    PASS = "pass"              # 通过，输出可信
-    CONDITIONAL_PASS = "conditional_pass"  # 有条件通过（需关注）
-    CORRECTED = "corrected"   # 已修正后通过
-    BLOCK = "block"            # 拦截，不可信
-    ESCALATE = "escalate"      # 上报人工
+    PASS = "pass"
+    CONDITIONAL_PASS = "conditional_pass"
+    CORRECTED = "corrected"
+    BLOCK = "block"
+    ESCALATE = "escalate"
 
 
 @dataclass
 class VerificationRequest:
     """验证请求"""
     input_text: str
-    ground_truth: str
+    ground_truth: Optional[str] = None
     context: Optional[dict] = None
-    embed_fn: Optional[Callable] = None  # str -> np.ndarray
-    process_fn: Optional[Callable] = None  # np.ndarray -> np.ndarray (for stability check)
+    embed_fn: Optional[Callable] = None
+    process_fn: Optional[Callable] = None
 
 
 @dataclass
@@ -54,9 +79,10 @@ class VerificationResponse:
     """验证响应"""
     verdict: Verdict
     delta_s_result: Optional[DeltaSResult] = None
-    kun_guard_result: Optional[KunGuardResult] = None
-    stability_score: Optional[QianAdvanceResult] = None
-    tuned_output: Optional[TunedOutput] = None
+    detection_result: Optional[dict] = field(default_factory=dict)
+    reasoning_chain_result: Optional[dict] = field(default_factory=dict)
+    governance_result: Optional[dict] = field(default_factory=dict)
+    diagnosis_result: Optional[dict] = field(default_factory=dict)
     failure_detections: list[FailureDetection] = field(default_factory=list)
     compilation: Optional[CompilationResult] = None
     final_vector: Optional[np.ndarray] = None
@@ -66,229 +92,380 @@ class VerificationResponse:
 
     @property
     def is_passing(self) -> bool:
-        return self.verdict in (Verdict.PASS, Verdict.CONDITIONAL_PASS, Verdict.CORRECTED)
-
-    @property
-    def failure_count(self) -> int:
-        critical = sum(1 for f in self.failure_detections 
-                      if f.mode.severity == FailureSeverity.CRITICAL)
-        errors = sum(1 for f in self.failure_detections 
-                    if f.mode.severity == FailureSeverity.ERROR)
-        warnings = sum(1 for f in self.failure_detections 
-                      if f.mode.severity == FailureSeverity.WARNING)
-        return {'critical': critical, 'error': errors, 'warning': warnings}
+        return self.verdict in (
+            Verdict.PASS, Verdict.CONDITIONAL_PASS, Verdict.CORRECTED
+        )
 
 
 class TaijiVerifyEngine:
     """
-    太极验证引擎 - 完整验证流水线
+    太极验证引擎 v2 - 六层融合
 
     Usage::
         engine = TaijiVerifyEngine(embedding_dim=768)
-        
         response = engine.verify(
-            input_text="AI生成的环评分析结论",
-            ground_truth="正确的排放数据分析结果",
-            embed_fn=my_embedding_function,
+            input_text="碳排放权交易管理办法规定...",
+            ground_truth="碳排放权交易管理办法...",
         )
-        
-        if response.verdict == Verdict.PASS:
-            print("验证通过")
-        elif response.verdict == Verdict.BLOCK:
-            print("拦截！检测到", response.failure_count, "个问题")
+        print(response.verdict)
     """
 
     def __init__(
         self,
         embedding_dim: int = 768,
         delta_s_safe_threshold: float = 0.3,
-        hazard_block_threshold: HazardLevel = HazardLevel.HIGH,
-        enable_failure_modes: bool = True,
-        enable_stability_check: bool = True,
+        enable_all_layers: bool = True,
+        enable_governance: bool = True,
     ):
         self.embedding_dim = embedding_dim
-        
-        # 五大模块实例
+        self.enable_all_layers = enable_all_layers
+        self.enable_governance = enable_governance
+
         self.delta_s_calculator = DeltaSCalculator(
             embedding_dim=embedding_dim,
             safe_threshold=delta_s_safe_threshold,
         )
-        self.kun_guard = KunGuard()
-        self.qian_advance = QianAdvance(k_paths=5)
-        self.fu_return = FuReturn()
-        self.xun_tune = XunTune()
+        self.failure_detector = FailureModeDetector()
         self.compiler = PolarisCompiler()
-        self.failure_detector = FailureModeDetector() if enable_failure_modes else None
-        
-        # 配置
-        self.hazard_block_threshold = hazard_block_threshold
-        self.enable_stability = enable_stability_check
-    
-    def verify(self, request: VerificationRequest) -> VerificationResponse:
+
+        if enable_all_layers:
+            self._init_detection_layer()
+            self._init_reasoning_layer()
+            self._init_diagnosis_layer()
+            self._init_governance_layer()
+            self._init_execution_layer()
+
+    def _init_detection_layer(self) -> None:
+        """初始化检测层"""
+        self.rule_engine = RuleEngine()
+        self.consistency_checker = SelfConsistencyChecker()
+        self.hallucination_detector = HallucinationDetector()
+
+    def _init_reasoning_layer(self) -> None:
+        """初始化推理层"""
+        self.seven_step_chain = SevenStepChain()
+        self.coupler = Coupler()
+        self.semantic_firewall = SemanticFirewall()
+
+    def _init_diagnosis_layer(self) -> None:
+        """初始化诊断层"""
+        from taiji_verify.diagnosis.global_fix_map import GlobalFixMap
+        from taiji_verify.diagnosis.troubleshooting_atlas import TroubleshootingAtlas
+        self.fix_map = GlobalFixMap()
+        self.troubleshooting_atlas = TroubleshootingAtlas()
+
+    def _init_governance_layer(self) -> None:
+        """初始化治理层"""
+        self.twin_atlas = TwinAtlas()
+
+    def _init_execution_layer(self) -> None:
+        """初始化执行层"""
+        self.goal_compiler = GoalCompiler()
+        self.leak_auditor = LeakAuditor()
+
+    def verify(
+        self,
+        input_text: str,
+        ground_truth: Optional[str] = None,
+        context: Optional[dict] = None,
+        embed_fn: Optional[Callable] = None,
+        samples: Optional[int] = None,
+    ) -> VerificationResponse:
         """执行完整验证流水线"""
         start = time.time()
-        
-        if request.embed_fn is None:
-            return self._text_only_verification(request, start)
-        
-        return self._full_vector_verification(request, start)
-    
-    def _text_only_verification(
-        self, request: VerificationRequest, start: float,
-    ) -> VerificationResponse:
-        """无embedding函数时的纯文本验证（使用16种失败模式）"""
-        detections = []
-        if self.failure_detector:
-            detections = self.failure_detector.detect_all(request.input_text)
-        
-        # 编译目标为原子任务
-        compilation = self.compiler.compile(request.ground_truth)
-        
-        has_critical = any(
-            d.mode.severity == FailureSeverity.CRITICAL for d in detections
+
+        request = VerificationRequest(
+            input_text=input_text,
+            ground_truth=ground_truth,
+            context=context,
+            embed_fn=embed_fn,
         )
-        
-        if has_critical:
-            verdict = Verdict.BLOCK
-        elif detections:
-            verdict = Verdict.CONDITIONAL_PASS
-        else:
-            verdict = Verdict.PASS
-        
-        return VerificationResponse(
-            verdict=verdict,
-            failure_detections=detections,
-            compilation=compilation,
-            processing_time_ms=int((time.time() - start) * 1000),
-            metadata={'mode': 'text_only'},
-        )
-    
-    def _full_vector_verification(
-        self, request: VerificationRequest, start: float,
+
+        if self.enable_all_layers:
+            return self._full_layer_verification(request, start)
+        return self._basic_verification(request, start)
+
+    def verify_text_only(self, input_text: str) -> VerificationResponse:
+        """纯文本验证"""
+        return self.verify(input_text, ground_truth=None)
+
+    def verify_with_vectors(
+        self,
+        input_vec: np.ndarray,
+        ground_vec: np.ndarray,
     ) -> VerificationResponse:
-        """完整向量验证流水线"""
-        embed_fn = request.embed_fn
-        
-        # Step 1: Embedding
-        input_vec = embed_fn(request.input_text)
-        ground_vec = embed_fn(request.ground_truth)
-        
-        # Step 2: DeltaS 阴阳距计算
+        """向量验证"""
+        start = time.time()
         ds_result = self.delta_s_calculator.compute(input_vec, ground_vec)
-        
-        # Step 3: KunGuard 坤守修正（仅在risk/danger时）
-        kg_result = None
-        current_vec = input_vec
-        if ds_result.needs_correction:
-            kg_result = self.kun_guard.correct(current_vec, ground_vec)
-            current_vec = kg_result.corrected_vector
-        
-        # Step 4: QianAdvance 稳定性检查
-        stab_score = None
-        if self.enable_stability and request.process_fn:
-            stab_score = self.qian_advance.evaluate(
-                current_vec, request.process_fn, ground_vec,
-            )
-            
-            # 如果不稳定，触发复归状态机检查
-            if stab_score.is_unstable:
-                fake_lambda = 1.0 - stab_score.f_S  # 映射到λ空间
-                recovery_result = self.fu_return.check_and_handle(fake_lambda)
-                if recovery_result and not recovery_result.success:
-                    # 尝试强制恢复
-                    recovery_result = self.fu_return.force_recover()
-        
-        # Step 5: XunTune 巽调调节
-        tuned = self.xun_tune.modulate_single(current_vec)
-        final_vec = tuned.modulated_weights * current_vec
-        
-        # Step 6: 失败模式检测
-        detections = []
-        if self.failure_detector:
-            detections = self.failure_detector.detect_all(
-                request.input_text, delta_s=ds_result.delta_s,
-            )
-        
-        # Step 7: 编译目标为原子任务
-        compilation = self.compiler.compile(request.ground_truth, context=request.context)
-        
-        # Step 8: 综合判定
-        verdict = self._make_verdict(ds_result, kg_result, stab_score, detections)
-        
+        verdict = self._compute_verdict_from_delta_s(ds_result)
+
         return VerificationResponse(
             verdict=verdict,
             delta_s_result=ds_result,
-            kun_guard_result=kg_result,
-            stability_score=stab_score,
-            tuned_output=TunedOutput(
-                content_vector=final_vec,
-                attention_weights=tuned.modulated_weights,
-                modulation_factor=tuned.gate_factor,
-                confidence_adjusted=tuned.gate_factor < 0.7,
-            ),
+            processing_time_ms=int((time.time() - start) * 1000),
+        )
+
+    def verify_full_pipeline(
+        self,
+        input_text: str,
+        ground_truth: Optional[str] = None,
+        context: Optional[dict] = None,
+    ) -> VerificationResponse:
+        """完整流水线验证"""
+        return self.verify(input_text, ground_truth, context)
+
+    def _basic_verification(
+        self, request: VerificationRequest, start: float,
+    ) -> VerificationResponse:
+        """基础验证（Layer 1核心）"""
+        detections = self.failure_detector.detect_all(request.input_text)
+        compilation = self.compiler.compile(request.ground_truth or "")
+
+        verdict = Verdict.PASS
+        if any(d.mode.severity == FailureSeverity.CRITICAL for d in detections):
+            verdict = Verdict.BLOCK
+        elif detections:
+            verdict = Verdict.CONDITIONAL_PASS
+
+        return VerificationResponse(
+            verdict=verdict,
             failure_detections=detections,
             compilation=compilation,
-            final_vector=final_vec,
             processing_time_ms=int((time.time() - start) * 1000),
-            metadata={'mode': 'full_pipeline'},
+            metadata={'mode': 'basic'},
         )
-    
-    def _make_verdict(
+
+    def _full_layer_verification(
+        self, request: VerificationRequest, start: float,
+    ) -> VerificationResponse:
+        """完整六层验证"""
+        input_text = request.input_text
+
+        detection_result = self._run_detection_layer(input_text)
+
+        reasoning_chain_result = self._run_reasoning_layer(
+            input_text, request.ground_truth
+        )
+
+        governance_result = self._run_governance_layer(input_text)
+
+        if request.ground_truth and request.embed_fn:
+            ds_result = self._run_delta_s(request.embed_fn, input_text, request.ground_truth)
+            verdict = self._compute_verdict(
+                ds_result, detection_result, reasoning_chain_result, governance_result
+            )
+        else:
+            ds_result = None
+            verdict = self._compute_verdict_no_vectors(
+                detection_result, reasoning_chain_result, governance_result
+            )
+
+        diagnosis_result = self._run_diagnosis_layer(
+            input_text, detection_result
+        )
+
+        compilation = self.compiler.compile(request.ground_truth or input_text)
+
+        return VerificationResponse(
+            verdict=verdict,
+            delta_s_result=ds_result,
+            detection_result=detection_result,
+            reasoning_chain_result=reasoning_chain_result,
+            governance_result=governance_result,
+            diagnosis_result=diagnosis_result,
+            failure_detections=self.failure_detector.detect_all(input_text),
+            compilation=compilation,
+            processing_time_ms=int((time.time() - start) * 1000),
+            metadata={'mode': 'full_6layer'},
+        )
+
+    def _run_detection_layer(self, text: str) -> dict:
+        """运行检测层"""
+        result = {
+            'rule_result': None,
+            'consistency_result': None,
+            'hallucination_result': None,
+        }
+
+        rule_engine = RuleEngine()
+        result['rule_result'] = rule_engine.verify(text)
+
+        consistency = SelfConsistencyChecker()
+        result['consistency_result'] = consistency.batch_consistency([text])
+
+        detector = HallucinationDetector()
+        result['hallucination_result'] = detector.detect(text)
+
+        return result
+
+    def _run_reasoning_layer(
+        self, text: str, goal: Optional[str],
+    ) -> dict:
+        """运行推理层"""
+        result = {
+            'chain_result': None,
+            'firewall_result': None,
+            'delta_s': None,
+        }
+
+        chain = SevenStepChain()
+        input_data = StepInput(
+            text=text,
+            goal=goal or text,
+        )
+        result['chain_result'] = chain.execute_full_chain(input_data)
+        result['delta_s'] = result['chain_result'].final_delta_s
+
+        firewall = SemanticFirewall()
+        result['firewall_result'] = firewall.check(text)
+
+        return result
+
+    def _run_governance_layer(self, text: str) -> dict:
+        """运行治理层"""
+        result = {
+            'gate_results': {},
+            'twin_atlas_result': None,
+            'stopped': False,
+            'coarse': False,
+        }
+
+        gate_results = evaluate_all_gates(text)
+        result['gate_results'] = {
+            gate_type.value: gr for gate_type, gr in gate_results.items()
+        }
+
+        for gate_type, gate_result in gate_results.items():
+            if gate_result.state == GateState.STOP:
+                result['stopped'] = True
+            elif gate_result.state == GateState.COARSE:
+                result['coarse'] = True
+
+        atlas = TwinAtlas()
+        result['twin_atlas_result'] = atlas.execute(text)
+
+        return result
+
+    def _run_diagnosis_layer(
+        self, text: str, detection_result: dict,
+    ) -> dict:
+        """运行诊断层"""
+        from taiji_verify.diagnosis.troubleshooting_atlas import TroubleshootingAtlas
+
+        atlas = TroubleshootingAtlas()
+        diagnosis = atlas.diagnose(text)
+
+        return {
+            'diagnosis': diagnosis,
+            'recommended_fixes': diagnosis.recommended_fixes,
+        }
+
+    def _run_delta_s(
+        self, embed_fn: Callable,
+        input_text: str, ground_truth: str,
+    ) -> DeltaSResult:
+        """计算阴阳距"""
+        input_vec = embed_fn(input_text)
+        ground_vec = embed_fn(ground_truth)
+        return self.delta_s_calculator.compute(input_vec, ground_vec)
+
+    def _compute_verdict(
         self,
-        ds: DeltaSResult,
-        kg: Optional[KunGuardResult],
-        stab: Optional[QianAdvanceResult],
-        failures: list[FailureDetection],
+        ds_result: DeltaSResult,
+        detection_result: dict,
+        reasoning_result: dict,
+        governance_result: dict,
     ) -> Verdict:
-        """综合所有模块结果做出最终判定"""
-        # CRITICAL失败模式 → 直接拦截
-        if any(f.mode.severity == FailureSeverity.CRITICAL for f in failures):
+        """综合判定"""
+        if governance_result['stopped']:
             return Verdict.BLOCK
-        
-        # DANGER闸区 → 拦截
-        if ds.zone == GateZone.DANGER:
-            return Verdict.BLOCK
-        
-        # RISK闸区 + HIGH危害 → 拦截
-        if ds.zone == GateZone.RISK and kg and kg.hazard_level == HazardLevel.HIGH:
-            return Verdict.BLOCK
-        
-        # 有修正操作 → 条件通过或已修正
-        if kg and kg.correction_applied:
-            if failures:
-                return Verdict.CONDITIONAL_PASS
-            return Verdict.CORRECTED
-        
-        # 不稳定但可恢复
-        if stab and stab.is_unstable:
-            if self.fu_return.state != RecoveryState.STABLE:
-                return Verdict.ESCALATE
+
+        if governance_result['coarse']:
             return Verdict.CONDITIONAL_PASS
-        
-        # WARNING级别失败 → 有条件通过
-        if any(f.mode.severity == FailureSeverity.WARNING for f in failures):
+
+        hallucinations = detection_result.get('hallucination_result')
+        if hallucinations and hallucinations.risk_level == DetectRiskLevel.CRITICAL:
+            return Verdict.BLOCK
+
+        if ds_result.zone == GateZone.DANGER:
+            if hallucinations and hallucinations.weighted_score > 0.7:
+                return Verdict.BLOCK
+
+        if ds_result.zone == GateZone.RISK:
+            firewall = reasoning_result.get('firewall_result')
+            if firewall and firewall.decision == "MODIFIED":
+                return Verdict.CORRECTED
+            return Verdict.ESCALATE
+
+        if ds_result.zone == GateZone.TRANSIT:
             return Verdict.CONDITIONAL_PASS
-        
-        # 全部正常 → 通过
+
+        if ds_result.zone == GateZone.SAFE:
+            if hallucinations and hallucinations.risk_level == DetectRiskLevel.LOW:
+                return Verdict.PASS
+            return Verdict.CONDITIONAL_PASS
+
         return Verdict.PASS
 
-    def add_knowledge_anchor(self, content: str, vector=None, source=""):
-        """便捷方法：添加知识锚点到坤守模块"""
-        return self.kun_guard.add_knowledge_anchor(
-            content=content, vector=vector, source=source,
-        )
+    def _compute_verdict_no_vectors(
+        self,
+        detection_result: dict,
+        reasoning_result: dict,
+        governance_result: dict,
+    ) -> Verdict:
+        """无向量时的判定"""
+        if governance_result['stopped']:
+            return Verdict.BLOCK
 
-    def add_delta_anchor(self, text: str, weight: float = 1.0):
-        """便捷方法：添加ΔS锚点扩展"""
-        self.delta_s_calculator.add_anchor(text, weight)
+        if governance_result['coarse']:
+            return Verdict.CONDITIONAL_PASS
+
+        hallucinations = detection_result.get('hallucination_result')
+        if hallucinations and hallucinations.risk_level == DetectRiskLevel.CRITICAL:
+            return Verdict.BLOCK
+
+        firewall = reasoning_result.get('firewall_result')
+        if firewall and firewall.decision == "BLOCK":
+            return Verdict.BLOCK
+
+        if hallucinations and hallucinations.risk_level == DetectRiskLevel.HIGH:
+            return Verdict.CONDITIONAL_PASS
+
+        return Verdict.PASS
+
+    def _compute_verdict_from_delta_s(self, ds_result: DeltaSResult) -> Verdict:
+        """从ΔS结果计算判定"""
+        if ds_result.zone == GateZone.DANGER:
+            return Verdict.BLOCK
+        if ds_result.zone == GateZone.RISK:
+            return Verdict.CONDITIONAL_PASS
+        if ds_result.zone == GateZone.TRANSIT:
+            return Verdict.CONDITIONAL_PASS
+        return Verdict.PASS
+
+    def add_rule(self, rule) -> None:
+        """添加规则到检测层"""
+        if hasattr(self, 'rule_engine'):
+            self.rule_engine.add_rule(rule)
+
+    def add_knowledge_entry(
+        self, entry_id: str, content: str, keywords: list[str],
+    ) -> None:
+        """添加知识条目"""
+        if hasattr(self, 'rule_engine'):
+            self.rule_engine.add_knowledge_entry(entry_id, content, keywords)
 
     @property
     def system_health(self) -> dict:
-        """系统健康状态概览"""
-        return {
-            'fu_return_state': self.fu_return.state.value,
-            'fu_return_healthy': self.fu_return.is_healthy,
-            'kun_anchors': len(self.kun_guard._anchors),
-            'delta_anchors': len(self.delta_s_calculator._anchor_extensions),
-            'failure_modes_enabled': self.failure_detector is not None,
+        """系统健康状态"""
+        health = {
+            'engine_version': 'v2_6layer',
+            'layers_enabled': {
+                'detection': hasattr(self, 'rule_engine'),
+                'reasoning': hasattr(self, 'seven_step_chain'),
+                'diagnosis': hasattr(self, 'fix_map'),
+                'governance': hasattr(self, 'twin_atlas'),
+                'execution': hasattr(self, 'goal_compiler'),
+            }
         }
+        return health

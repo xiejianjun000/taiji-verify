@@ -1,48 +1,50 @@
-"""TaijiVerifyEngine 太极验证引擎测试"""
-import numpy as np
+"""
+Engine Tests - 主引擎测试
+"""
+
 import pytest
-from numpy.linalg import norm
+from taiji_verify.engine import TaijiVerifyEngine, Verdict
 
-class TestEngine:
+
+class TestTaijiVerifyEngine:
+    """主引擎测试"""
+
     def test_engine_initialization(self):
-        from taiji_verify.engine import TaijiVerifyEngine
+        """测试引擎初始化"""
         engine = TaijiVerifyEngine()
-        assert engine is not None
+        assert engine.embedding_dim == 768
 
-    def test_verify_safe_input(self):
-        from taiji_verify.engine import TaijiVerifyEngine, VerificationRequest
+    def test_verify_text_only(self):
+        """测试纯文本验证"""
         engine = TaijiVerifyEngine()
-        request = VerificationRequest(
-            input_text="这是一个正常的测试输入",
-            ground_truth="这是预期的正确输出",
-            context={'task': 'test'}
+        response = engine.verify_text_only("碳排放权交易管理办法规定")
+        assert isinstance(response.verdict, Verdict)
+        assert response.verdict in [Verdict.PASS, Verdict.BLOCK, Verdict.CONDITIONAL_PASS]
+
+    def test_verify_basic(self):
+        """测试基础验证"""
+        engine = TaijiVerifyEngine(enable_all_layers=False)
+        response = engine.verify("碳排放权交易管理办法规定")
+        assert isinstance(response.verdict, Verdict)
+
+    def test_verify_full_pipeline(self):
+        """测试完整流水线"""
+        engine = TaijiVerifyEngine()
+        response = engine.verify_full_pipeline(
+            input_text="碳排放权交易平台应当建立",
+            ground_truth="碳排放权交易平台应当建立完善的监管机制"
         )
-        result = engine.verify(request)
-        assert result.verdict is not None
+        assert response.verdict in [Verdict.PASS, Verdict.BLOCK, Verdict.CONDITIONAL_PASS, Verdict.CORRECTED]
 
-    def test_engine_has_all_components(self):
-        from taiji_verify.engine import TaijiVerifyEngine
+    def test_system_health(self):
+        """测试系统健康状态"""
         engine = TaijiVerifyEngine()
-        assert hasattr(engine, 'delta_s_calculator')
-        assert hasattr(engine, 'kun_guard')
-        assert hasattr(engine, 'qian_advance')
-        assert hasattr(engine, 'fu_return')
-        assert hasattr(engine, 'xun_tune')
-        assert hasattr(engine, 'compiler')
+        health = engine.system_health
+        assert 'engine_version' in health
+        assert 'layers_enabled' in health
 
     def test_verdict_enum(self):
-        from taiji_verify.engine import Verdict
-        assert Verdict.PASS is not None
-        assert Verdict.BLOCK is not None
-        assert Verdict.CORRECTED is not None
-
-    def test_verification_request(self):
-        from taiji_verify.engine import VerificationRequest
-        req = VerificationRequest(
-            input_text="test",
-            ground_truth="expected",
-            context={"key": "value"}
-        )
-        assert req.input_text == "test"
-        assert req.ground_truth == "expected"
-        assert req.context["key"] == "value"
+        """测试判定枚举"""
+        assert Verdict.PASS.value == "pass"
+        assert Verdict.BLOCK.value == "block"
+        assert Verdict.ESCALATE.value == "escalate"

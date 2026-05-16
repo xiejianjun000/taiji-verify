@@ -93,6 +93,9 @@ class SevenStepChain:
 
     def _init_layer1_modules(self) -> None:
         """初始化Layer 1核心模块"""
+        from taiji_verify.delta_s import DeltaSCalculator
+        from taiji_verify.reasoning.coupler import Coupler
+
         self.delta_s_calculator = DeltaSCalculator(
             embedding_dim=self.config.embedding_dim,
             safe_threshold=0.3,
@@ -101,6 +104,7 @@ class SevenStepChain:
         self.qian_advance = QianAdvance(k_paths=5)
         self.fu_return = FuReturn()
         self.xun_tune = XunTune()
+        self.coupler = Coupler()
 
     @property
     def steps(self) -> list[str]:
@@ -239,13 +243,10 @@ class SevenStepChain:
         delta_s = prev_output.delta_s if prev_output else 0.5
         gate_zone = prev_output.gate_zone if prev_output else "TRANSIT"
 
-        from taiji_verify.reasoning.coupler import Coupler
-        coupler = Coupler()
-
         previous_delta = self._get_previous_delta()
-        progression_allowed = coupler.check_progression(previous_delta, delta_s)
+        progression_allowed = self.coupler.check_progression(previous_delta, delta_s)
 
-        coupling_strength = coupler.compute_coupling_strength(previous_delta, delta_s)
+        coupling_strength = self.coupler.compute_coupling_strength(previous_delta, delta_s)
 
         return StepOutput(
             step_name="Coupler",

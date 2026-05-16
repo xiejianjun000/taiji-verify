@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from taiji_verify.detection.rule_engine import RuleEngine
@@ -52,7 +52,7 @@ class DetectionResult:
 
 class HallucinationDetector:
     """
-    幻觉检测器 - 真正集成RuleEngine、Consistency、SourceTracer
+    幻觉检测器 - 自动初始化内部模块
 
     Usage::
         detector = HallucinationDetector()
@@ -66,15 +66,29 @@ class HallucinationDetector:
         consistency_weight: float = 0.3,
         trace_weight: float = 0.3,
         risk_threshold: float = 0.8,
+        auto_init: bool = True,
     ):
         self.rule_weight = rule_weight
         self.consistency_weight = consistency_weight
         self.trace_weight = trace_weight
         self.risk_threshold = risk_threshold
 
-        self._rule_engine = None
-        self._consistency_checker = None
-        self._source_tracer = None
+        if auto_init:
+            self._init_default_modules()
+        else:
+            self._rule_engine = None
+            self._consistency_checker = None
+            self._source_tracer = None
+
+    def _init_default_modules(self) -> None:
+        """自动初始化默认模块"""
+        from taiji_verify.detection.rule_engine import RuleEngine
+        from taiji_verify.detection.consistency import SelfConsistencyChecker
+        from taiji_verify.detection.source_tracer import SourceTracer
+
+        self._rule_engine = RuleEngine()
+        self._consistency_checker = SelfConsistencyChecker()
+        self._source_tracer = SourceTracer()
 
     def set_rule_engine(self, engine: "RuleEngine") -> None:
         """注入RuleEngine"""

@@ -78,6 +78,13 @@ from taiji_verify.engine import (
     VerificationResponse,
     Verdict,
 )
+from taiji_verify.plugin import (
+    verify,
+    verify_async,
+    batch_verify,
+    TaijiVerify,
+    VerifyResult,
+)
 
 __all__ = [
     # Delta S (阴阳距)
@@ -141,4 +148,10 @@ __all__ = [
     "VerificationRequest",
     "VerificationResponse",
     "Verdict",
+    # Plugin SDK (一行验证)
+    "verify",
+    "verify_async",
+    "batch_verify",
+    "TaijiVerify",
+    "VerifyResult",
 ]

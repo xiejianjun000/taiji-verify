@@ -1,0 +1,34 @@
+{
+  "name": "@your-org/openclaw-skill-taiji-verify",
+  "version": "1.0.0",
+  "description": "Taiji Verify - AI输出语义验证技能",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "keywords": ["openclaw", "skill", "verification", "taiji"],
+  "license": "MIT",
+  "openclaw": {
+    "name": "taiji-verify",
+    "description": "太极验证 - 检查AI输出是否可信",
+    "triggers": ["/verify", "/taiji", "验证", "检查幻觉"],
+    "config": {
+      "apiUrl": {
+        "type": "string",
+        "default": "http://localhost:8080",
+        "description": "Taiji Verify API地址"
+      },
+      "strictMode": {
+        "type": "boolean",
+        "default": false,
+        "description": "严格模式 - 只允许pass判定"
+      }
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}

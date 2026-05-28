@@ -1,9 +1,49 @@
 """
-Source Tracer Tests
+Source Tracer Tests - 知识溯源器测试
+
+包含原有测试 + 新增归因验证能力测试
 """
 
-import pytest
-from taiji_verify.detection.source_tracer import SourceTracer, TraceResult, KnowledgeSource
+import sys
+import os
+import types
+
+# 直接加载模块
+st_module = types.ModuleType('source_tracer')
+sys.modules['source_tracer'] = st_module
+
+# 先加载 numpy
+import numpy as np
+st_module.np = np
+
+# 读取并执行 source_tracer.py
+with open(
+    os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'taiji_verify', 'detection', 'source_tracer.py'),
+    'r'
+) as f:
+    content = f.read()
+# 移除 import numpy as np 因为我们已经手动设置了
+content = content.replace('import numpy as np', '')
+exec(content, st_module.__dict__)
+
+# 导入需要的类
+SourceTracer = st_module.SourceTracer
+TraceResult = st_module.TraceResult
+KnowledgeSource = st_module.KnowledgeSource
+AttributionTraceResult = st_module.AttributionTraceResult
+
+
+def load_attribution_verifier():
+    """加载 attribution_verifier 模块"""
+    av_module = types.ModuleType('taiji_verify.detection.attribution_verifier')
+    sys.modules['taiji_verify.detection.attribution_verifier'] = av_module
+    with open(
+        os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'taiji_verify', 'detection', 'attribution_verifier.py'),
+        'r'
+    ) as f:
+        av_content = f.read()
+    exec(av_content, av_module.__dict__)
+    return av_module
 
 
 class TestSourceTracer:
@@ -58,3 +98,123 @@ class TestSourceTracer:
         tracer.add_entry("E1", "内容", ["关键词"])
         result = tracer.query("完全不同的内容")
         assert isinstance(result, TraceResult)
+
+
+class TestSourceTracerAttribution:
+    """溯源器归因能力测试 (v2.2)"""
+
+    def test_trace_with_attribution_no_verifier(self):
+        """测试未启用归因验证时的trace_with_attribution"""
+        tracer = SourceTracer()
+        tracer.add_entry("E1", "测试内容", ["测试"])
+        result = tracer.trace_with_attribution("这是测试内容")
+        assert isinstance(result, AttributionTraceResult)
+        assert result.has_citation is False
+
+    def test_trace_with_attribution_with_verifier(self):
+        """测试启用归因验证后的trace_with_attribution"""
+        av_module = load_attribution_verifier()
+        
+        tracer = SourceTracer()
+        tracer.add_entry("E1", "测试内容", ["测试"])
+        
+        # 创建归因验证器并添加知识 - 使用完全匹配的文本
+        test_content = "重点排污单位应当安装污染物排放自动监测设备"
+        verifier = av_module.AttributionVerifier()
+        verifier.add_knowledge(
+            source_id="大气污染防治法/第38条",
+            source_path="大气污染防治法/第四章/第38条",
+            content=test_content,
+            metadata={"law": "大气污染防治法", "article": "38"},
+        )
+        
+        # 直接设置归因验证器
+        tracer._attribution_verifier = verifier
+        tracer._attribution_available = True
+        
+        # 使用与知识库完全相同的文本
+        result = tracer.trace_with_attribution(test_content)
+        assert isinstance(result, AttributionTraceResult)
+        assert result.has_citation is True
+        assert result.attribution_result is not None
+        assert result.attribution_result.source_id == "大气污染防治法/第38条"
+
+    def test_batch_trace_with_attribution(self):
+        """测试批量带归因的溯源"""
+        av_module = load_attribution_verifier()
+        
+        tracer = SourceTracer()
+        tracer.add_entry("E1", "测试内容", ["测试"])
+        
+        # 创建归因验证器并添加知识
+        content1 = "建设单位应当按照规定编制环境影响评价文件"
+        verifier = av_module.AttributionVerifier()
+        verifier.add_knowledge(
+            source_id="环评法/第16条",
+            source_path="环评法/第三章/第16条",
+            content=content1,
+            metadata={"law": "环境影响评价法", "article": "16"},
+        )
+        
+        # 直接设置归因验证器
+        tracer._attribution_verifier = verifier
+        tracer._attribution_available = True
+        
+        # 使用与知识库完全相同的文本
+        texts = [content1, content1]
+        results = tracer.batch_trace_with_attribution(texts)
+        assert len(results) == 2
+        assert all(isinstance(r, AttributionTraceResult) for r in results)
+        assert results[0].has_citation is True
+
+    def test_sync_to_attribution_verifier(self):
+        """测试同步知识到归因验证器"""
+        av_module = load_attribution_verifier()
+        
+        # 创建归因验证器
+        verifier = av_module.AttributionVerifier()
+        
+        tracer = SourceTracer()
+        tracer._attribution_verifier = verifier
+        tracer._attribution_available = True
+        
+        # 通过add_entry添加条目，应该自动同步到归因验证器
+        tracer.add_entry(
+            "E1",
+            "测试内容",
+            ["测试"],
+            source="测试来源",
+            metadata={"law": "测试法", "article": "1"},
+        )
+        
+        # 验证归因验证器中有同步的知识
+        assert tracer._attribution_verifier is not None
+        entry = tracer._attribution_verifier.get_knowledge_entry("E1")
+        assert entry is not None
+        assert entry.content == "测试内容"
+
+    def test_attribution_accuracy_calculation(self):
+        """测试引用准确度计算"""
+        av_module = load_attribution_verifier()
+        
+        tracer = SourceTracer()
+        tracer.add_entry("E1", "测试内容", ["测试"])
+        
+        # 创建归因验证器并添加知识 - 使用完全匹配的文本
+        test_content = "重点排污单位应当安装污染物排放自动监测设备"
+        verifier = av_module.AttributionVerifier()
+        verifier.add_knowledge(
+            source_id="大气污染防治法/第38条",
+            source_path="大气污染防治法/第38条",
+            content=test_content,
+            metadata={"law": "大气污染防治法", "article": "38"},
+        )
+        
+        # 直接设置归因验证器
+        tracer._attribution_verifier = verifier
+        tracer._attribution_available = True
+        
+        # 使用与知识库完全相同的文本
+        result = tracer.trace_with_attribution(test_content)
+        assert 0 <= result.citation_accuracy <= 1
+        assert result.has_citation is True

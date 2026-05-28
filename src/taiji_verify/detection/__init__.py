@@ -8,6 +8,7 @@ Detection Layer - Taiji Verify Layer 2
 - hallucination_detector: 幻觉检测
 - stream_guard: 流式守卫
 - eco_rules: 生态环境规则
+- attribution_verifier: 归因验证（SAA能力）
 """
 
 from taiji_verify.detection.rule_engine import (
@@ -27,6 +28,13 @@ from taiji_verify.detection.consistency import (
 from taiji_verify.detection.source_tracer import (
     SourceTracer,
     TraceResult,
+)
+from taiji_verify.detection.attribution_verifier import (
+    AttributionVerifier,
+    AttributionResult,
+    AttributionLevel,
+    StrictAttributedAccuracy,
+    KnowledgeEntry as AttributionKnowledgeEntry,
 )
 from taiji_verify.detection.hallucination_detector import (
     HallucinationDetector,
@@ -50,6 +58,7 @@ from taiji_verify.detection.eco_rules import (
 )
 
 __all__ = [
+    # Rule Engine
     "Rule",
     "RuleEngine",
     "VerificationRule",
@@ -57,18 +66,29 @@ __all__ = [
     "SymbolConsistencyResult",
     "KnowledgeEntry",
     "KnowledgeMatch",
+    # Consistency
     "SelfConsistencyChecker",
     "SimilarityResult",
     "SamplingConfig",
+    # Source Tracer
     "SourceTracer",
     "TraceResult",
+    # Attribution Verifier (SAA)
+    "AttributionVerifier",
+    "AttributionResult",
+    "AttributionLevel",
+    "StrictAttributedAccuracy",
+    "AttributionKnowledgeEntry",
+    # Hallucination Detector
     "HallucinationDetector",
     "RiskLevel",
     "DetectionResult",
     "SegmentResult",
+    # Stream Guard
     "StreamGuard",
     "GuardConfig",
     "GuardResult",
+    # Eco Rules
     "EcoRule",
     "FakeStandardRule",
     "TimeTravelRule",

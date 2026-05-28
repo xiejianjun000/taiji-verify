@@ -1,12 +1,17 @@
 """
-Taiji Verify Engine v2 - 太极验证主引擎 (六层融合)
+Taiji Verify Engine v2.2 - 太极验证主引擎 (六层融合 + 归因验证)
 
 整合六层架构的完整验证流水线：
-Layer 2: Detection层 - 规则引擎、一致性、溯源、幻觉检测
+Layer 2: Detection层 - 规则引擎、一致性、溯源、幻觉检测、归因验证(SAA)
 Layer 3: Reasoning层 - 七步推理链、检查点、耦合器、语义防火墙
 Layer 4: Diagnosis层 - 全局修复图、故障排除
 Layer 5: Governance层 - 双图、7个治理门
 Layer 6: Execution层 - 目标编译器、泄漏审计
+
+v2.2新增：
+- AttributionVerifier: 归因验证能力
+- SAA指标计算
+- VerificationResponse.attribution字段
 
 判定规则：
 - 治理层STOP → BLOCK
@@ -18,6 +23,7 @@ Layer 6: Execution层 - 目标编译器、泄漏审计
 - ΔS在TRANSIT → CONDITIONAL_PASS
 - ΔS在SAFE+低风险 → PASS
 - 执行层有未完成 → CONDITIONAL_PASS
+- 归因验证失败 → CONDITIONAL_PASS (带警告)
 """
 
 from __future__ import annotations
@@ -42,6 +48,11 @@ from taiji_verify.detection.consistency import SelfConsistencyChecker
 from taiji_verify.detection.hallucination_detector import (
     HallucinationDetector,
     RiskLevel as DetectRiskLevel,
+)
+from taiji_verify.detection.attribution_verifier import (
+    AttributionVerifier,
+    AttributionResult,
+    AttributionLevel,
 )
 from taiji_verify.reasoning.seven_step_chain import SevenStepChain, StepInput
 from taiji_verify.reasoning.coupler import Coupler
@@ -74,6 +85,22 @@ class VerificationRequest:
 
 
 @dataclass
+class AttributionSummary:
+    """
+    归因验证摘要
+
+    用于在验证响应中返回归因相关的汇总信息
+    """
+
+    total_conclusions: int = 0  # 总结论数
+    attributable_count: int = 0  # 可归因数
+    attribution_rate: float = 0.0  # 归因率
+    saa_score: Optional[float] = None  # SAA分数（如果有ground_truth）
+    attribution_level_counts: dict[str, int] = field(default_factory=dict)  # 各级别数量
+    has_attribution: bool = False  # 是否有归因验证结果
+
+
+@dataclass
 class VerificationResponse:
     """验证响应"""
 
@@ -89,6 +116,9 @@ class VerificationResponse:
     corrected_text: Optional[str] = None
     processing_time_ms: int = 0
     metadata: dict = field(default_factory=dict)
+    # v2.2新增归因字段
+    attribution: Optional[AttributionSummary] = None  # 归因验证摘要
+    attribution_results: list[AttributionResult] = field(default_factory=list)  # 详细归因结果
 
     @property
     def is_passing(self) -> bool:
@@ -97,7 +127,7 @@ class VerificationResponse:
 
 class TaijiVerifyEngine:
     """
-    太极验证引擎 v2 - 六层融合
+    太极验证引擎 v2.2 - 六层融合 + 归因验证
 
     Usage::
         engine = TaijiVerifyEngine(embedding_dim=768)
@@ -106,6 +136,7 @@ class TaijiVerifyEngine:
             ground_truth="碳排放权交易管理办法...",
         )
         print(response.verdict)
+        print(response.attribution)  # 访问归因摘要
     """
 
     def __init__(
@@ -114,10 +145,12 @@ class TaijiVerifyEngine:
         delta_s_safe_threshold: float = 0.3,
         enable_all_layers: bool = True,
         enable_governance: bool = True,
+        enable_attribution: bool = True,
     ):
         self.embedding_dim = embedding_dim
         self.enable_all_layers = enable_all_layers
         self.enable_governance = enable_governance
+        self.enable_attribution = enable_attribution
 
         self.delta_s_calculator = DeltaSCalculator(
             embedding_dim=embedding_dim,
@@ -138,6 +171,9 @@ class TaijiVerifyEngine:
         self.rule_engine = RuleEngine()
         self.consistency_checker = SelfConsistencyChecker()
         self.hallucination_detector = HallucinationDetector()
+        # v2.2新增：归因验证器
+        if self.enable_attribution:
+            self.attribution_verifier = AttributionVerifier()
 
     def _init_reasoning_layer(self) -> None:
         """初始化推理层"""
@@ -265,6 +301,11 @@ class TaijiVerifyEngine:
 
         compilation = self.compiler.compile(request.ground_truth or input_text)
 
+        # v2.2新增：归因验证
+        attribution_results, attribution_summary = self._run_attribution_layer(
+            input_text, request.context
+        )
+
         return VerificationResponse(
             verdict=verdict,
             delta_s_result=ds_result,
@@ -276,6 +317,8 @@ class TaijiVerifyEngine:
             compilation=compilation,
             processing_time_ms=int((time.time() - start) * 1000),
             metadata={"mode": "full_6layer"},
+            attribution=attribution_summary,
+            attribution_results=attribution_results,
         )
 
     def _run_detection_layer(self, text: str) -> dict:
@@ -296,6 +339,75 @@ class TaijiVerifyEngine:
         result["hallucination_result"] = detector.detect(text)
 
         return result
+
+    def _run_attribution_layer(
+        self,
+        text: str,
+        context: Optional[dict] = None,
+    ) -> tuple[list[AttributionResult], Optional[AttributionSummary]]:
+        """
+        运行归因验证层
+
+        Args:
+            text: 待验证文本
+            context: 上下文信息，可能包含声称的来源等
+
+        Returns:
+            tuple[list[AttributionResult], AttributionSummary]: 归因结果和摘要
+        """
+        if not self.enable_attribution or not hasattr(self, "attribution_verifier"):
+            return [], None
+
+        verifier = self.attribution_verifier
+
+        # 如果知识库为空，使用context中的知识
+        if not verifier.knowledge_base and context:
+            if "knowledge_base" in context:
+                for kb_entry in context["knowledge_base"]:
+                    verifier.add_knowledge(**kb_entry)
+
+        # 提取声称的来源
+        claimed_source = None
+        if context and "claimed_source" in context:
+            claimed_source = context["claimed_source"]
+
+        # 执行归因验证
+        result = verifier.verify_attribution(text, claimed_source)
+
+        # 计算归因摘要
+        summary = AttributionSummary(
+            total_conclusions=1,
+            attributable_count=1 if result.is_attributable else 0,
+            attribution_rate=1.0 if result.is_attributable else 0.0,
+            attribution_level_counts={result.attribution_level.value: 1},
+            has_attribution=True,
+        )
+
+        return [result], summary
+
+    def add_attribution_knowledge(
+        self,
+        source_id: str,
+        source_path: str,
+        content: str,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """
+        添加归因验证知识
+
+        Args:
+            source_id: 来源ID
+            source_path: 来源路径
+            content: 内容
+            metadata: 元数据
+        """
+        if hasattr(self, "attribution_verifier"):
+            self.attribution_verifier.add_knowledge(
+                source_id=source_id,
+                source_path=source_path,
+                content=content,
+                metadata=metadata,
+            )
 
     def _run_reasoning_layer(
         self,
@@ -465,13 +577,14 @@ class TaijiVerifyEngine:
     def system_health(self) -> dict:
         """系统健康状态"""
         health = {
-            "engine_version": "v2_6layer",
+            "engine_version": "v2.2_6layer_attribution",
             "layers_enabled": {
                 "detection": hasattr(self, "rule_engine"),
                 "reasoning": hasattr(self, "seven_step_chain"),
                 "diagnosis": hasattr(self, "fix_map"),
                 "governance": hasattr(self, "twin_atlas"),
                 "execution": hasattr(self, "goal_compiler"),
+                "attribution": hasattr(self, "attribution_verifier"),
             },
         }
         return health

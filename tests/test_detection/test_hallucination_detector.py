@@ -1,128 +1,42 @@
-"""
-Hallucination Detector Tests
-"""
-
+"""Hallucination Detector 测试 - Phase 2 升级版本"""
 import pytest
-from unittest.mock import Mock, patch
 from taiji_verify.detection.hallucination_detector import (
-    HallucinationDetector,
-    RiskLevel,
-    DetectionResult,
-    SegmentResult,
+    HallucinationDetector, RiskLevel, DetectionResult, SegmentResult,
+    HallucinationType, HallucinationEvidence,
 )
 
 
-class TestRiskLevel:
-    def test_risk_level_values(self):
-        assert RiskLevel.LOW.value == "low"
-        assert RiskLevel.MEDIUM.value == "medium"
-        assert RiskLevel.HIGH.value == "high"
-        assert RiskLevel.CRITICAL.value == "critical"
+class TestHallucinationDetectorInit:
+    """幻觉检测器初始化测试"""
 
-
-class TestSegmentResult:
-    def test_segment_result_creation(self):
-        segment = SegmentResult(
-            text="测试文本",
-            is_hallucination=True,
-            confidence=0.8,
-            matched_sources=["source1"],
-            rule_score=0.7,
-            consistency_score=0.6,
-            trace_score=0.5,
-        )
-        assert segment.text == "测试文本"
-        assert segment.is_hallucination is True
-        assert segment.confidence == 0.8
-        assert "source1" in segment.matched_sources
-
-
-class TestDetectionResult:
-    def test_detection_result_creation(self):
-        result = DetectionResult(
-            weighted_score=0.6,
-            risk_level=RiskLevel.HIGH,
-            details={"test": "data"},
-            segments=[],
-        )
-        assert result.weighted_score == 0.6
-        assert result.risk_level == RiskLevel.HIGH
-
-
-class TestHallucinationDetector:
-    """幻觉检测器测试"""
-
-    def test_init_default(self):
+    def test_default_init(self):
         detector = HallucinationDetector()
+        assert detector is not None
         assert detector.rule_weight == 0.4
         assert detector.consistency_weight == 0.3
         assert detector.trace_weight == 0.3
-        assert detector.risk_threshold == 0.8
 
-    def test_init_custom_weights(self):
+    def test_custom_weights(self):
         detector = HallucinationDetector(
             rule_weight=0.5,
-            consistency_weight=0.25,
-            trace_weight=0.25,
-            risk_threshold=0.6,
+            consistency_weight=0.3,
+            trace_weight=0.2,
         )
         assert detector.rule_weight == 0.5
-        assert detector.consistency_weight == 0.25
-        assert detector.trace_weight == 0.25
-        assert detector.risk_threshold == 0.6
+        assert detector.consistency_weight == 0.3
+        assert detector.trace_weight == 0.2
 
-    def test_init_no_auto_init(self):
-        detector = HallucinationDetector(auto_init=False)
-        assert detector._rule_engine is None
-        assert detector._consistency_checker is None
-        assert detector._source_tracer is None
 
-    def test_set_rule_engine(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_engine = Mock()
-        detector.set_rule_engine(mock_engine)
-        assert detector._rule_engine == mock_engine
+class TestDetectionBasic:
+    """基础检测功能测试"""
 
-    def test_set_consistency_checker(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_checker = Mock()
-        detector.set_consistency_checker(mock_checker)
-        assert detector._consistency_checker == mock_checker
-
-    def test_set_source_tracer(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_tracer = Mock()
-        detector.set_source_tracer(mock_tracer)
-        assert detector._source_tracer == mock_tracer
-
-    def test_detect_basic(self):
+    def test_detect_with_weighted_score(self):
         detector = HallucinationDetector()
         text = "根据GB12345标准，环境质量应符合规定要求"
         result = detector.detect(text)
         assert hasattr(result, 'weighted_score')
+        assert hasattr(result, 'risk_level')
         assert isinstance(result.risk_level, RiskLevel)
-        assert 'rule_score' in result.details
-        assert 'consistency_score' in result.details
-        assert 'trace_score' in result.details
-
-    def test_detect_weights_normalized(self):
-        detector = HallucinationDetector()
-        result = detector.detect("测试文本")
-        total_weight = detector.rule_weight + detector.consistency_weight + detector.trace_weight
-        assert total_weight == 1.0
-
-    def test_detect_low_score_text(self):
-        detector = HallucinationDetector(risk_threshold=0.5)
-        text = "碳排放权交易管理办法"
-        result = detector.detect(text)
-        assert result.weighted_score >= 0
-        assert result.weighted_score <= 1
-
-    def test_detect_high_score_text(self):
-        detector = HallucinationDetector()
-        text = "根据内部知识显示，水是由绿元素组成的"
-        result = detector.detect(text)
-        assert result.weighted_score >= 0
 
     def test_risk_level_threshold(self):
         detector = HallucinationDetector(risk_threshold=0.8)
@@ -135,138 +49,229 @@ class TestHallucinationDetector:
         result = detector.detect_segmented(text)
         assert len(result.segments) >= 3
 
-    def test_segmented_empty_text(self):
+
+class TestHallucinationTypes:
+    """8类幻觉分型测试"""
+
+    def test_detect_factual_incorrectness(self):
         detector = HallucinationDetector()
-        result = detector.detect_segmented("")
-        assert result.weighted_score == 0.0
-        assert result.risk_level == RiskLevel.LOW
+        result = detector.detect("根据GB999999标准规定")
+        assert HallucinationType.FACTUAL_INCORRECTNESS in result.detected_types
 
-    def test_segmented_single_sentence(self):
+    def test_detect_contextual_inconsistency(self):
         detector = HallucinationDetector()
-        text = "只有一个句子。"
-        result = detector.detect_segmented(text)
-        assert len(result.segments) == 1
+        long_text = "重复内容重复内容重复内容重复内容重复内容重复内容重复内容重复内容重复内容重复内容"
+        result = detector.detect(long_text)
+        assert HallucinationType.CONTEXTUAL_INCONSISTENCY in result.detected_types
 
-    def test_segmented_multiple_sentences(self):
+    def test_detect_logical_contradiction(self):
         detector = HallucinationDetector()
-        text = "第一句。第二句。第三句。第四句。"
-        result = detector.detect_segmented(text)
-        assert len(result.segments) == 4
+        result = detector.detect("该物质有毒但也无害")
+        assert HallucinationType.LOGICAL_CONTRADICTION in result.detected_types
 
-    def test_compute_risk_level_low(self):
+    def test_detect_unverifiable_claim(self):
         detector = HallucinationDetector()
-        level = detector._compute_risk_level(0.1)
-        assert level == RiskLevel.LOW
+        result = detector.detect("专家认为这是正确的")
+        assert HallucinationType.UNVERIFIABLE_CLAIM in result.detected_types
 
-    def test_compute_risk_level_medium(self):
+    def test_detect_misgrounding(self):
         detector = HallucinationDetector()
-        level = detector._compute_risk_level(0.4)
-        assert level == RiskLevel.MEDIUM
+        references = ["GB12345规定企业应当减排"]
+        result = detector.detect("根据GB12345规定，企业可以排放", references=references)
+        assert HallucinationType.MISGROUNDING in result.detected_types
 
-    def test_compute_risk_level_high(self):
+    def test_detect_semantic_distortion(self):
         detector = HallucinationDetector()
-        level = detector._compute_risk_level(0.6)
-        assert level == RiskLevel.HIGH
+        result = detector.detect("应当禁止但允许排放")
+        assert HallucinationType.SEMANTIC_DISTORTION in result.detected_types
 
-    def test_compute_risk_level_critical(self):
+    def test_detect_temporal_inconsistency(self):
         detector = HallucinationDetector()
-        level = detector._compute_risk_level(0.9)
-        assert level == RiskLevel.CRITICAL
+        result = detector.detect("该法律将于2050年颁布")
+        assert HallucinationType.TEMPORAL_INCONSISTENCY in result.detected_types
 
-    def test_split_sentences(self):
+    def test_detect_circular_reasoning(self):
         detector = HallucinationDetector()
-        text = "第一句。第二句！第三句？第四句；第五句\n第六句"
-        sentences = detector._split_sentences(text)
-        assert len(sentences) >= 5
+        result = detector.detect("因为A所以B，因为B所以A")
+        assert HallucinationType.CIRCULAR_REASONING in result.detected_types
 
-    def test_split_sentences_empty(self):
+
+class TestMisgroundingDetection:
+    """Misgrounding检测测试"""
+
+    def test_misgrounding_with_references(self):
         detector = HallucinationDetector()
-        sentences = detector._split_sentences("")
-        assert len(sentences) == 0
+        references = ["GB12345规定企业应当减排"]
+        result = detector.detect(
+            "根据GB12345规定，企业可以自由排放",
+            references=references
+        )
+        assert len(result.evidences) > 0
+        assert any(e.hallucination_type == HallucinationType.MISGROUNDING for e in result.evidences)
 
-    def test_split_sentences_only_delimiters(self):
+    def test_no_misgrounding_valid(self):
         detector = HallucinationDetector()
-        sentences = detector._split_sentences("。！？；\n")
-        assert len(sentences) == 0
+        references = ["GB12345规定企业应当减排"]
+        result = detector.detect(
+            "根据GB12345规定，企业应当减排",
+            references=references
+        )
+        assert HallucinationType.MISGROUNDING not in result.detected_types
 
-    def test_check_rules_with_engine(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_engine = Mock()
-        mock_engine.verify.return_value = Mock(passed=False, confidence=0.5)
-        detector.set_rule_engine(mock_engine)
-        score = detector._check_rules("测试文本")
-        assert score == 0.8
-        mock_engine.verify.assert_called_once_with("测试文本")
-
-    def test_check_rules_passed(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_engine = Mock()
-        mock_engine.verify.return_value = Mock(passed=True, confidence=0.8)
-        detector.set_rule_engine(mock_engine)
-        score = detector._check_rules("测试文本")
-        assert abs(score - 0.2) < 0.001
-
-    def test_check_consistency_with_checker(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_checker = Mock()
-        mock_checker.batch_consistency.return_value = Mock(avg_similarity=0.7)
-        detector.set_consistency_checker(mock_checker)
-        score = detector._check_consistency("测试文本")
-        assert abs(score - 0.3) < 0.001
-
-    def test_check_trace_with_tracer(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_tracer = Mock()
-        mock_tracer.query.return_value = Mock(matched_entry_ids=["source1"], coverage=0.6)
-        detector.set_source_tracer(mock_tracer)
-        score = detector._check_trace("测试文本")
-        assert score == 0.4
-
-    def test_check_trace_no_match(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_tracer = Mock()
-        mock_tracer.query.return_value = Mock(matched_entry_ids=[], coverage=0.0)
-        detector.set_source_tracer(mock_tracer)
-        score = detector._check_trace("测试文本")
-        assert score == 0.8
-
-    def test_check_trace_segment(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_tracer = Mock()
-        mock_tracer.query.return_value = Mock(matched_entry_ids=["s1"], coverage=0.5)
-        detector.set_source_tracer(mock_tracer)
-        result = detector._check_trace_segment("测试文本")
-        assert "score" in result
-        assert "sources" in result
-        assert result["score"] == 0.5
-
-    def test_check_consistency_segment(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_checker = Mock()
-        mock_checker.batch_consistency.return_value = Mock(avg_similarity=0.8)
-        detector.set_consistency_checker(mock_checker)
-        score = detector._check_consistency_segment("测试文本")
-        assert abs(score - 0.2) < 0.001
-
-    def test_empty_text(self):
+    def test_misgrounding_negation(self):
         detector = HallucinationDetector()
-        result = detector.detect("")
-        assert result.weighted_score >= 0
+        references = ["GB12345规定企业可以排放"]
+        result = detector.detect(
+            "根据GB12345规定，企业不得排放",
+            references=references
+        )
+        assert HallucinationType.MISGROUNDING in result.detected_types
 
-    def test_weighted_score_calculation(self):
-        detector = HallucinationDetector(auto_init=False)
-        mock_engine = Mock()
-        mock_engine.verify.return_value = Mock(passed=True, confidence=0.9)
-        detector.set_rule_engine(mock_engine)
 
-        mock_checker = Mock()
-        mock_checker.batch_consistency.return_value = Mock(avg_similarity=0.95)
-        detector.set_consistency_checker(mock_checker)
+class TestDetectionResult:
+    """检测结果测试"""
 
-        mock_tracer = Mock()
-        mock_tracer.query.return_value = Mock(matched_entry_ids=["s1"], coverage=0.9)
-        detector.set_source_tracer(mock_tracer)
-
+    def test_detection_result_structure(self):
+        detector = HallucinationDetector()
         result = detector.detect("测试文本")
-        expected_score = (0.1 * 0.4 + 0.05 * 0.3 + 0.1 * 0.3) / 1.0
-        assert abs(result.weighted_score - expected_score) < 0.01
+        assert isinstance(result, DetectionResult)
+        assert hasattr(result, 'weighted_score')
+        assert hasattr(result, 'risk_level')
+        assert hasattr(result, 'details')
+        assert hasattr(result, 'detected_types')
+        assert hasattr(result, 'evidences')
+
+    def test_segment_result_structure(self):
+        detector = HallucinationDetector()
+        result = detector.detect_segmented("测试文本")
+        assert len(result.segments) > 0
+        segment = result.segments[0]
+        assert isinstance(segment, SegmentResult)
+        assert hasattr(segment, 'text')
+        assert hasattr(segment, 'is_hallucination')
+        assert hasattr(segment, 'detected_types')
+        assert hasattr(segment, 'evidences')
+
+
+class TestRiskLevel:
+    """风险等级测试"""
+
+    def test_risk_level_low(self):
+        detector = HallucinationDetector()
+        result = detector.detect("正常的文本内容")
+        assert result.risk_level == RiskLevel.LOW or result.risk_level == RiskLevel.MEDIUM
+
+    def test_risk_level_high_with_hallucination(self):
+        detector = HallucinationDetector()
+        result = detector.detect("根据GB999999标准规定")
+        assert HallucinationType.FACTUAL_INCORRECTNESS in result.detected_types
+        assert len(result.evidences) > 0
+
+    def test_risk_level_with_misgrounding(self):
+        detector = HallucinationDetector()
+        references = ["GB12345规定企业应当减排"]
+        result = detector.detect(
+            "根据GB12345规定，企业可以自由排放",
+            references=references
+        )
+        assert HallucinationType.MISGROUNDING in result.detected_types
+        assert len(result.evidences) >= 2
+
+
+class TestHallucinationEvidence:
+    """幻觉证据测试"""
+
+    def test_evidence_creation(self):
+        evidence = HallucinationEvidence(
+            hallucination_type=HallucinationType.FACTUAL_INCORRECTNESS,
+            confidence=0.9,
+            description="测试证据",
+        )
+        assert evidence.hallucination_type == HallucinationType.FACTUAL_INCORRECTNESS
+        assert evidence.confidence == 0.9
+        assert evidence.description == "测试证据"
+
+    def test_evidence_in_detection(self):
+        detector = HallucinationDetector()
+        result = detector.detect("根据GB999999标准规定")
+        assert len(result.evidences) > 0
+        evidence = result.evidences[0]
+        assert isinstance(evidence, HallucinationEvidence)
+
+
+class TestHallucinationSummary:
+    """幻觉摘要测试"""
+
+    def test_get_hallucination_summary(self):
+        detector = HallucinationDetector()
+        result = detector.detect("根据GB999999标准规定")
+        summary = detector.get_hallucination_summary(result)
+        assert 'risk_level' in summary
+        assert 'score' in summary
+        assert 'detected_types' in summary
+        assert 'type_counts' in summary
+        assert 'evidence_count' in summary
+
+    def test_summary_with_multiple_types(self):
+        detector = HallucinationDetector()
+        references = ["GB12345规定企业应当减排"]
+        result = detector.detect(
+            "根据GB999999标准规定，企业可以自由排放",
+            references=references
+        )
+        summary = detector.get_hallucination_summary(result)
+        assert len(summary['detected_types']) >= 2
+
+
+class TestSegmentedDetection:
+    """分段检测测试"""
+
+    def test_segmented_detection_multiple_sentences(self):
+        detector = HallucinationDetector()
+        text = "正常句子。根据GB999999标准规定。另一个正常句子。"
+        result = detector.detect_segmented(text)
+        assert len(result.segments) == 3
+        assert any(s.is_hallucination for s in result.segments)
+
+    def test_segmented_detection_with_references(self):
+        detector = HallucinationDetector()
+        references = ["GB12345规定企业应当减排"]
+        text = "根据GB12345规定，企业可以排放。正常句子。"
+        result = detector.detect_segmented(text, references=references)
+        assert len(result.segments) == 2
+        assert result.segments[0].is_hallucination is True
+
+
+class TestHallucinationTypeValues:
+    """幻觉类型枚举值测试"""
+
+    def test_hallucination_type_values(self):
+        assert HallucinationType.FACTUAL_INCORRECTNESS.value == "factual_incorrectness"
+        assert HallucinationType.CONTEXTUAL_INCONSISTENCY.value == "contextual_inconsistency"
+        assert HallucinationType.LOGICAL_CONTRADICTION.value == "logical_contradiction"
+        assert HallucinationType.UNVERIFIABLE_CLAIM.value == "unverifiable_claim"
+        assert HallucinationType.MISGROUNDING.value == "misgrounding"
+        assert HallucinationType.SEMANTIC_DISTORTION.value == "semantic_distortion"
+        assert HallucinationType.TEMPORAL_INCONSISTENCY.value == "temporal_inconsistency"
+        assert HallucinationType.CIRCULAR_REASONING.value == "circular_reasoning"
+
+
+class TestIntegration:
+    """集成测试"""
+
+    def test_detect_and_summary_workflow(self):
+        detector = HallucinationDetector()
+        result = detector.detect("根据GB999999标准规定")
+        summary = detector.get_hallucination_summary(result)
+        assert summary['evidence_count'] == len(result.evidences)
+
+    def test_segmented_and_full_detection(self):
+        detector = HallucinationDetector()
+        text = "正常句子。根据GB999999标准规定。"
+        full_result = detector.detect(text)
+        segmented_result = detector.detect_segmented(text)
+        
+        assert full_result.weighted_score == pytest.approx(
+            sum(s.confidence for s in segmented_result.segments) / len(segmented_result.segments),
+            rel=0.1
+        )

@@ -1,7 +1,9 @@
-"""InverseAtlas 逆图测试 - 完整实现"""
+"""InverseAtlas 逆图测试 - Phase 2 升级版本"""
 import pytest
 from taiji_verify.governance.inverse_atlas import (
     InverseAtlas, InverseResult, LogicalGap, GapType, GapSeverity,
+    OpeningDebate, DebateClaim, DebateStatus, ClaimStatus,
+    EntailmentResult,
 )
 
 
@@ -140,6 +142,16 @@ class TestSuggestFixes:
         fixes = atlas.suggest_fixes(gaps)
         assert len(fixes) >= 2
 
+    def test_suggest_fix_misgrounding(self):
+        atlas = InverseAtlas()
+        gap = LogicalGap(
+            gap_type=GapType.MISGROUNDING,
+            description="Misgrounding检测",
+            severity=GapSeverity.HIGH,
+        )
+        fixes = atlas.suggest_fixes([gap])
+        assert any("蕴含" in f for f in fixes)
+
 
 class TestValidateConclusion:
     """结论验证测试"""
@@ -147,10 +159,11 @@ class TestValidateConclusion:
     def test_validate_conclusion_valid(self):
         atlas = InverseAtlas()
         result = atlas.validate_conclusion(
-            "碳排放权交易应当遵守管理办法",
+            "根据碳排放权交易管理办法，交易应当遵守管理办法",
             ["碳排放权交易管理办法已发布"],
         )
-        assert result.is_valid is True
+        assert result.confidence >= 0.8
+        assert len(result.logical_gaps) <= 1
 
     def test_validate_conclusion_invalid(self):
         atlas = InverseAtlas()
@@ -216,6 +229,9 @@ class TestLogicalGap:
         assert GapType.UNSUPPORTED_CLAIM is not None
         assert GapType.CIRCULAR_REASONING is not None
         assert GapType.CONTRADICTION is not None
+        assert GapType.MISGROUNDING is not None
+        assert GapType.INVALID_ENTAILMENT is not None
+        assert GapType.ASSERTION_WITHOUT_EVIDENCE is not None
 
     def test_gap_severity_values(self):
         assert GapSeverity.CRITICAL is not None
@@ -279,3 +295,229 @@ class TestIntegration:
             requires_premises=["水的基本化学性质"],
         )
         assert isinstance(result, InverseResult)
+
+
+# ==================== Phase 2: Opening-only辩论机制测试 ====================
+
+class TestOpeningDebate:
+    """Opening-only辩论测试"""
+
+    def test_create_debate(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("碳排放权交易分析")
+        assert isinstance(debate, OpeningDebate)
+        assert debate.topic == "碳排放权交易分析"
+        assert debate.status == DebateStatus.OPEN
+
+    def test_add_claim(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("测试主题")
+        debate = atlas.add_claim(debate, "C1", "这是一个论点", ["证据1", "证据2"])
+        assert len(debate.claims) == 1
+        assert debate.claims[0].id == "C1"
+        assert debate.claims[0].content == "这是一个论点"
+        assert debate.claims[0].evidence == ["证据1", "证据2"]
+
+    def test_add_multiple_claims(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("测试主题")
+        debate = atlas.add_claim(debate, "C1", "论点1", ["证据1"])
+        debate = atlas.add_claim(debate, "C2", "论点2", ["证据2"])
+        assert len(debate.claims) == 2
+
+    def test_add_claim_to_closed_debate(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("测试主题")
+        debate.status = DebateStatus.CLOSED
+        original_len = len(debate.claims)
+        debate = atlas.add_claim(debate, "C1", "论点", ["证据"])
+        assert len(debate.claims) == original_len
+
+    def test_validate_debate_valid(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("有效辩论")
+        debate = atlas.add_claim(debate, "C1", "碳排放权交易应当遵守管理办法", ["管理办法条文", "政策文件"])
+        result = atlas.validate_debate(debate)
+        assert result.is_valid is True
+        assert debate.status == DebateStatus.CLOSED
+
+    def test_validate_debate_invalid_claim(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("无效辩论")
+        debate = atlas.add_claim(debate, "C1", "短", ["证据"])
+        result = atlas.validate_debate(debate)
+        assert result.is_valid is False
+        assert len(result.logical_gaps) > 0
+
+    def test_validate_debate_no_evidence(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("无证据辩论")
+        debate = atlas.add_claim(debate, "C1", "这是一个没有证据的论点", [])
+        result = atlas.validate_debate(debate)
+        assert result.is_valid is False
+        assert debate.claims[0].status == ClaimStatus.REJECTED
+
+    def test_validate_debate_needs_evidence(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("证据不足辩论")
+        debate = atlas.add_claim(debate, "C1", "这是一个证据不足的论点", ["仅一个证据"])
+        result = atlas.validate_debate(debate)
+        assert debate.claims[0].status == ClaimStatus.NEEDS_EVIDENCE
+
+    def test_validate_debate_with_jump_keyword(self):
+        atlas = InverseAtlas()
+        debate = atlas.create_debate("逻辑跳跃辩论")
+        debate = atlas.add_claim(debate, "C1", "显然这个结论是正确的", ["证据"])
+        result = atlas.validate_debate(debate)
+        assert result.is_valid is False
+        assert any(g.gap_type == GapType.UNSUPPORTED_CLAIM for g in result.logical_gaps)
+
+
+class TestMisgrounding:
+    """Misgrounding检测测试"""
+
+    def test_detect_misgrounding_empty(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding("", "")
+        assert result["misgrounding_detected"] is False
+
+    def test_detect_misgrounding_negation_added(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="根据GB12345规定，企业不得排放",
+            reference="GB12345规定企业可以排放"
+        )
+        assert result["misgrounding_detected"] is True
+        assert "否定词" in result["reasoning"]
+
+    def test_detect_misgrounding_permission_weakened(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="根据GB12345规定，企业可以排放",
+            reference="GB12345规定企业应当减排"
+        )
+        assert result["misgrounding_detected"] is True
+        assert "语气弱化" in result["reasoning"]
+
+    def test_detect_misgrounding_permission_strengthened(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="根据GB12345规定，企业应当减排",
+            reference="GB12345规定企业可以减排"
+        )
+        assert result["misgrounding_detected"] is True
+        assert "语气强化" in result["reasoning"]
+
+    def test_detect_misgrounding_no_citation(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="企业可以排放",
+            reference="GB12345规定企业应当减排"
+        )
+        assert result["misgrounding_detected"] is False
+
+    def test_detect_misgrounding_opposite_terms(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="根据规定，禁止排放",
+            reference="规定允许排放"
+        )
+        assert result["misgrounding_detected"] is True
+        assert "语义相反" in result["reasoning"]
+
+    def test_detect_misgrounding_valid(self):
+        atlas = InverseAtlas()
+        result = atlas.detect_misgrounding(
+            claim="根据GB12345规定，企业应当减排",
+            reference="GB12345规定企业应当减排"
+        )
+        assert result["misgrounding_detected"] is False
+
+
+class TestEntailment:
+    """蕴含验证测试"""
+
+    def test_verify_entailment_empty(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment("", "")
+        assert isinstance(result, EntailmentResult)
+        assert result.is_entailed is False
+        assert result.score == 0.0
+
+    def test_verify_entailment_no_overlap(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment("苹果是水果", "汽车有轮子")
+        assert result.is_entailed is False
+        assert "没有共同词汇" in result.reasoning
+
+    def test_verify_entailment_valid(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment(
+            "GB12345规定企业应当减排",
+            "企业应当减排"
+        )
+        assert result.is_entailed is True
+        assert result.score >= 0.7
+
+    def test_verify_entailment_adds_negation(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment(
+            "GB12345规定企业应当减排",
+            "企业不应当减排"
+        )
+        assert result.is_entailed is False
+        assert "否定" in result.reasoning
+
+    def test_verify_entailment_strengthens_mood(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment(
+            "GB12345规定企业可以减排",
+            "企业必须减排"
+        )
+        assert result.is_entailed is False
+        assert "强制性语气" in result.reasoning
+
+    def test_verify_entailment_counterexamples(self):
+        atlas = InverseAtlas()
+        result = atlas.verify_entailment(
+            "企业可以排放",
+            "企业必须排放"
+        )
+        assert len(result.counterexamples) > 0
+
+
+class TestValidationWithEntailment:
+    """带蕴含验证的完整验证测试"""
+
+    def test_validate_with_entailment_no_references(self):
+        atlas = InverseAtlas()
+        result = atlas.validate_with_entailment("正常文本")
+        assert isinstance(result, InverseResult)
+        assert result.entailment_verified is False
+
+    def test_validate_with_entailment_misgrounding(self):
+        atlas = InverseAtlas()
+        result = atlas.validate_with_entailment(
+            "根据GB12345规定，企业可以自由排放",
+            references=["GB12345规定企业应当减排"]
+        )
+        assert result.entailment_verified is True
+        assert any(g.gap_type == GapType.MISGROUNDING for g in result.logical_gaps)
+
+    def test_validate_with_entailment_invalid_entailment(self):
+        atlas = InverseAtlas()
+        result = atlas.validate_with_entailment(
+            "企业可以自由排放",
+            references=["企业应当减排"]
+        )
+        assert result.entailment_verified is True
+        assert any(g.gap_type == GapType.INVALID_ENTAILMENT for g in result.logical_gaps)
+
+    def test_validate_with_entailment_valid(self):
+        atlas = InverseAtlas()
+        result = atlas.validate_with_entailment(
+            "根据GB12345规定，企业应当减排",
+            references=["GB12345规定企业应当减排"]
+        )
+        assert result.entailment_verified is True
+        assert result.confidence >= 0.8

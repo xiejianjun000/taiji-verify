@@ -9,6 +9,9 @@ Detection Layer - Taiji Verify Layer 2
 - stream_guard: 流式守卫
 - eco_rules: 生态环境规则
 - attribution_verifier: 归因验证（SAA能力）
+- cross_model_verifier: ARIS交叉模型验证器
+- neural_symbolic: 神经符号双轨验证器
+- rag_score: RAG质量评分器
 """
 
 from taiji_verify.detection.rule_engine import (
@@ -56,6 +59,28 @@ from taiji_verify.detection.eco_rules import (
     FakeHistoryRule,
     get_all_rules,
 )
+from taiji_verify.detection.cross_model_verifier import (
+    ModelProvider,
+    MockProvider,
+    DeepSeekProvider,
+    QwenProvider,
+    GLMProvider,
+    CrossModelResult,
+    CrossModelVerifier,
+    CrossModelVerdict,
+)
+from taiji_verify.detection.neural_symbolic import (
+    TrackType,
+    TrackResult,
+    DualTrackResult,
+    NeuralSymbolicVerifier,
+)
+from taiji_verify.detection.rag_score import (
+    RAGScoreDimension,
+    RAGDimensionScore,
+    RAGScoreResult,
+    RAGScorer,
+)
 
 __all__ = [
     # Rule Engine
@@ -96,4 +121,23 @@ __all__ = [
     "WrongLegalStatusRule",
     "FakeHistoryRule",
     "get_all_rules",
+    # Cross Model Verifier (ARIS)
+    "ModelProvider",
+    "MockProvider",
+    "DeepSeekProvider",
+    "QwenProvider",
+    "GLMProvider",
+    "CrossModelResult",
+    "CrossModelVerifier",
+    "CrossModelVerdict",
+    # Neural Symbolic
+    "TrackType",
+    "TrackResult",
+    "DualTrackResult",
+    "NeuralSymbolicVerifier",
+    # RAG Score
+    "RAGScoreDimension",
+    "RAGDimensionScore",
+    "RAGScoreResult",
+    "RAGScorer",
 ]

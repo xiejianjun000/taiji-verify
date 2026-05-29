@@ -121,7 +121,7 @@ class TestSystemHealth:
     def test_system_health_full_layers(self):
         engine = TaijiVerifyEngine(enable_all_layers=True)
         health = engine.system_health
-        assert health['engine_version'] == 'v2_6layer'
+        assert health['engine_version'].startswith('v2.2')
         assert 'layers_enabled' in health
         assert health['layers_enabled']['detection'] is True
         assert health['layers_enabled']['reasoning'] is True

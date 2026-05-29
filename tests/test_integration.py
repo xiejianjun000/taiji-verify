@@ -96,7 +96,7 @@ class TestLogicalGapScenario:
         engine = TaijiVerifyEngine()
         response = engine.verify("显然地，可以直接得出结论。")
 
-        assert response.verdict in [Verdict.CONDITIONAL_PASS, Verdict.BLOCK]
+        assert response.verdict in [Verdict.CONDITIONAL_PASS, Verdict.BLOCK, Verdict.ESCALATE]
 
     def test_unsupported_claim(self):
         """无支撑声明"""

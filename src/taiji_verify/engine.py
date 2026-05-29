@@ -1,17 +1,18 @@
 """
-Taiji Verify Engine v2.2 - 太极验证主引擎 (六层融合 + 归因验证)
+Taiji Verify Engine v2.2 - 太极验证主引擎 (六层融合 + 归因验证 + ARIS交叉验证)
 
 整合六层架构的完整验证流水线：
-Layer 2: Detection层 - 规则引擎、一致性、溯源、幻觉检测、归因验证(SAA)
+Layer 2: Detection层 - 规则引擎、一致性、溯源、幻觉检测、归因验证、交叉模型验证、双轨验证、RAG评分
 Layer 3: Reasoning层 - 七步推理链、检查点、耦合器、语义防火墙
 Layer 4: Diagnosis层 - 全局修复图、故障排除
 Layer 5: Governance层 - 双图、7个治理门
 Layer 6: Execution层 - 目标编译器、泄漏审计
 
 v2.2新增：
-- AttributionVerifier: 归因验证能力
-- SAA指标计算
-- VerificationResponse.attribution字段
+- AttributionVerifier: 归因验证能力，SAA指标计算
+- CrossModelVerifier: ARIS交叉模型验证器
+- NeuralSymbolicVerifier: 神经符号双轨验证器
+- RAGScorer: RAG质量评分器
 
 判定规则：
 - 治理层STOP → BLOCK
@@ -23,7 +24,10 @@ v2.2新增：
 - ΔS在TRANSIT → CONDITIONAL_PASS
 - ΔS在SAFE+低风险 → PASS
 - 执行层有未完成 → CONDITIONAL_PASS
-- 归因验证失败 → CONDITIONAL_PASS (带警告)
+- 归因验证失败 → CONDITIONAL_PASS
+- 交叉模型DISAGREE → 升级风险等级
+- 双轨矛盾 → ESCALATE
+- RAG hallucination_risk > 0.5 → CONDITIONAL_PASS
 """
 
 from __future__ import annotations
@@ -52,7 +56,19 @@ from taiji_verify.detection.hallucination_detector import (
 from taiji_verify.detection.attribution_verifier import (
     AttributionVerifier,
     AttributionResult,
-    AttributionLevel,
+)
+from taiji_verify.detection.cross_model_verifier import (
+    CrossModelVerifier,
+    CrossModelResult,
+    CrossModelVerdict,
+)
+from taiji_verify.detection.neural_symbolic import (
+    NeuralSymbolicVerifier,
+    DualTrackResult,
+)
+from taiji_verify.detection.rag_score import (
+    RAGScorer,
+    RAGScoreResult,
 )
 from taiji_verify.reasoning.seven_step_chain import SevenStepChain, StepInput
 from taiji_verify.reasoning.coupler import Coupler
@@ -101,6 +117,56 @@ class AttributionSummary:
 
 
 @dataclass
+class CrossModelSummary:
+    """
+    交叉模型验证摘要
+
+    用于在验证响应中返回交叉模型验证的汇总信息
+    """
+
+    model_count: int = 0  # 参与的模型数量
+    verdict: Optional[CrossModelVerdict] = None  # 交叉验证判定
+    agreement_rate: float = 0.0  # 一致率
+    confidence: float = 0.0  # 置信度
+    has_disagreement: bool = False  # 是否存在分歧
+    disagreement_flags: list[str] = field(default_factory=list)  # 分歧标记
+
+
+@dataclass
+class DualTrackSummary:
+    """
+    双轨验证摘要
+
+    用于在验证响应中返回双轨验证的汇总信息
+    """
+
+    neural_score: float = 0.0  # 神经轨道分数
+    symbolic_score: float = 0.0  # 符号轨道分数
+    fused_score: float = 0.0  # 融合分数
+    neural_verdict: str = "uncertain"  # 神经轨道判定
+    symbolic_verdict: str = "uncertain"  # 符号轨道判定
+    fused_verdict: str = "uncertain"  # 融合判定
+    has_disagreement: bool = False  # 是否存在矛盾
+    fusion_strategy: str = "weighted"  # 融合策略
+
+
+@dataclass
+class RAGScoreSummary:
+    """
+    RAG评分摘要
+
+    用于在验证响应中返回RAG评分的结果摘要
+    """
+
+    overall_score: float = 0.0  # 加权总分
+    faithfulness_score: float = 0.0  # 忠实度分数
+    relevance_score: float = 0.0  # 相关性分数
+    completeness_score: float = 0.0  # 完整性分数
+    hallucination_risk: float = 0.0  # 幻觉风险
+    is_low_risk: bool = True  # 是否为低风险
+
+
+@dataclass
 class VerificationResponse:
     """验证响应"""
 
@@ -119,6 +185,10 @@ class VerificationResponse:
     # v2.2新增归因字段
     attribution: Optional[AttributionSummary] = None  # 归因验证摘要
     attribution_results: list[AttributionResult] = field(default_factory=list)  # 详细归因结果
+    # v2.2 Phase 1新增字段
+    cross_model: Optional[CrossModelSummary] = None  # 交叉模型验证摘要
+    dual_track: Optional[DualTrackSummary] = None  # 双轨验证摘要
+    rag_score: Optional[RAGScoreSummary] = None  # RAG评分摘要
 
     @property
     def is_passing(self) -> bool:
@@ -127,7 +197,7 @@ class VerificationResponse:
 
 class TaijiVerifyEngine:
     """
-    太极验证引擎 v2.2 - 六层融合 + 归因验证
+    太极验证引擎 v2.2 - 六层融合 + 归因验证 + ARIS交叉验证
 
     Usage::
         engine = TaijiVerifyEngine(embedding_dim=768)
@@ -136,7 +206,9 @@ class TaijiVerifyEngine:
             ground_truth="碳排放权交易管理办法...",
         )
         print(response.verdict)
-        print(response.attribution)  # 访问归因摘要
+        print(response.cross_model)  # 访问交叉模型摘要
+        print(response.dual_track)   # 访问双轨摘要
+        print(response.rag_score)    # 访问RAG评分摘要
     """
 
     def __init__(
@@ -146,11 +218,18 @@ class TaijiVerifyEngine:
         enable_all_layers: bool = True,
         enable_governance: bool = True,
         enable_attribution: bool = True,
+        enable_cross_model: bool = True,
+        enable_dual_track: bool = True,
+        enable_rag_score: bool = True,
     ):
         self.embedding_dim = embedding_dim
         self.enable_all_layers = enable_all_layers
         self.enable_governance = enable_governance
         self.enable_attribution = enable_attribution
+        # v2.2 Phase 1新增
+        self.enable_cross_model = enable_cross_model
+        self.enable_dual_track = enable_dual_track
+        self.enable_rag_score = enable_rag_score
 
         self.delta_s_calculator = DeltaSCalculator(
             embedding_dim=embedding_dim,
@@ -174,6 +253,15 @@ class TaijiVerifyEngine:
         # v2.2新增：归因验证器
         if self.enable_attribution:
             self.attribution_verifier = AttributionVerifier()
+        # v2.2 Phase 1新增：交叉模型验证器
+        if self.enable_cross_model:
+            self.cross_model_verifier = CrossModelVerifier()
+        # v2.2 Phase 1新增：双轨验证器
+        if self.enable_dual_track:
+            self.neural_symbolic_verifier = NeuralSymbolicVerifier()
+        # v2.2 Phase 1新增：RAG评分器
+        if self.enable_rag_score:
+            self.rag_scorer = RAGScorer()
 
     def _init_reasoning_layer(self) -> None:
         """初始化推理层"""
@@ -306,6 +394,27 @@ class TaijiVerifyEngine:
             input_text, request.context
         )
 
+        # v2.2 Phase 1新增：交叉模型验证
+        cross_model_result, cross_model_summary = self._run_cross_model_layer(
+            input_text, request.context
+        )
+
+        # v2.2 Phase 1新增：双轨验证
+        dual_track_result, dual_track_summary = self._run_dual_track_layer(
+            input_text, request.context
+        )
+
+        # v2.2 Phase 1新增：RAG评分
+        rag_score_result, rag_score_summary = self._run_rag_score_layer(input_text, request.context)
+
+        # v2.2 Phase 1: 基于新增验证结果调整判定
+        verdict = self._adjust_verdict_with_new_layers(
+            verdict,
+            cross_model_result,
+            dual_track_result,
+            rag_score_result,
+        )
+
         return VerificationResponse(
             verdict=verdict,
             delta_s_result=ds_result,
@@ -319,6 +428,9 @@ class TaijiVerifyEngine:
             metadata={"mode": "full_6layer"},
             attribution=attribution_summary,
             attribution_results=attribution_results,
+            cross_model=cross_model_summary,
+            dual_track=dual_track_summary,
+            rag_score=rag_score_summary,
         )
 
     def _run_detection_layer(self, text: str) -> dict:
@@ -339,6 +451,172 @@ class TaijiVerifyEngine:
         result["hallucination_result"] = detector.detect(text)
 
         return result
+
+    def _run_cross_model_layer(
+        self,
+        text: str,
+        context: Optional[dict] = None,
+    ) -> tuple[Optional[CrossModelResult], Optional[CrossModelSummary]]:
+        """
+        运行交叉模型验证层
+
+        Args:
+            text: 待验证文本
+            context: 上下文信息
+
+        Returns:
+            tuple[CrossModelResult, CrossModelSummary]: 验证结果和摘要
+        """
+        if not self.enable_cross_model or not hasattr(self, "cross_model_verifier"):
+            return None, None
+
+        verifier = self.cross_model_verifier
+        context_str = context.get("context") if context else None
+
+        # 执行交叉验证
+        result = verifier.verify(text, context_str)
+
+        # 构建摘要
+        summary = CrossModelSummary(
+            model_count=result.model_count,
+            verdict=result.verdict,
+            agreement_rate=result.agreement_rate,
+            confidence=result.confidence,
+            has_disagreement=result.has_disagreement,
+            disagreement_flags=result.disagreement_flags,
+        )
+
+        return result, summary
+
+    def _run_dual_track_layer(
+        self,
+        text: str,
+        context: Optional[dict] = None,
+    ) -> tuple[Optional[DualTrackResult], Optional[DualTrackSummary]]:
+        """
+        运行双轨验证层
+
+        Args:
+            text: 待验证文本
+            context: 上下文信息
+
+        Returns:
+            tuple[DualTrackResult, DualTrackSummary]: 验证结果和摘要
+        """
+        if not self.enable_dual_track or not hasattr(self, "neural_symbolic_verifier"):
+            return None, None
+
+        verifier = self.neural_symbolic_verifier
+
+        # 执行双轨验证
+        result = verifier.verify(text, context)
+
+        # 构建摘要
+        summary = DualTrackSummary(
+            neural_score=result.neural_result.score,
+            symbolic_score=result.symbolic_result.score,
+            fused_score=result.fused_result.score,
+            neural_verdict=result.neural_result.verdict,
+            symbolic_verdict=result.symbolic_result.verdict,
+            fused_verdict=result.fused_result.verdict,
+            has_disagreement=result.has_disagreement,
+            fusion_strategy=result.fusion_strategy,
+        )
+
+        return result, summary
+
+    def _run_rag_score_layer(
+        self,
+        text: str,
+        context: Optional[dict] = None,
+    ) -> tuple[Optional[RAGScoreResult], Optional[RAGScoreSummary]]:
+        """
+        运行RAG评分层
+
+        Args:
+            text: 待评分文本
+            context: 上下文信息，可能包含query和contexts
+
+        Returns:
+            tuple[RAGScoreResult, RAGScoreSummary]: 评分结果和摘要
+        """
+        if not self.enable_rag_score or not hasattr(self, "rag_scorer"):
+            return None, None
+
+        # 从context中提取RAG相关参数
+        query = context.get("query") if context else None
+        contexts = context.get("contexts", []) if context else []
+
+        # 如果没有提供query和contexts，使用text作为答案构建简单场景
+        if not query:
+            query = text
+            contexts = [text]
+
+        scorer = self.rag_scorer
+
+        # 执行评分
+        result = scorer.score(query=query, answer=text, contexts=contexts)
+
+        # 构建摘要
+        summary = RAGScoreSummary(
+            overall_score=result.overall_score,
+            faithfulness_score=result.faithfulness_score,
+            relevance_score=result.relevance_score,
+            completeness_score=result.completeness_score,
+            hallucination_risk=result.hallucination_risk,
+            is_low_risk=result.is_low_risk,
+        )
+
+        return result, summary
+
+    def _adjust_verdict_with_new_layers(
+        self,
+        current_verdict: Verdict,
+        cross_model_result: Optional[CrossModelResult],
+        dual_track_result: Optional[DualTrackResult],
+        rag_score_result: Optional[RAGScoreResult],
+    ) -> Verdict:
+        """
+        基于新增验证层结果调整判定
+
+        规则：
+        - 交叉模型AGREE → 置信度加成（维持当前判定）
+        - 交叉模型DISAGREE → 升级风险等级
+        - 双轨矛盾 → ESCALATE
+        - RAG hallucination_risk > 0.5 → CONDITIONAL_PASS
+
+        Args:
+            current_verdict: 当前判定
+            cross_model_result: 交叉模型验证结果
+            dual_track_result: 双轨验证结果
+            rag_score_result: RAG评分结果
+
+        Returns:
+            Verdict: 调整后的判定
+        """
+        # 1. 检查交叉模型验证
+        if cross_model_result:
+            if cross_model_result.verdict == CrossModelVerdict.DISAGREE:
+                # 分歧降级
+                if current_verdict == Verdict.PASS:
+                    return Verdict.CONDITIONAL_PASS
+                elif current_verdict == Verdict.CONDITIONAL_PASS:
+                    return Verdict.ESCALATE
+
+        # 2. 检查双轨验证
+        if dual_track_result:
+            if dual_track_result.has_disagreement:
+                # 双轨矛盾直接ESCALATE
+                return Verdict.ESCALATE
+
+        # 3. 检查RAG评分
+        if rag_score_result:
+            if rag_score_result.hallucination_risk > 0.5:
+                # 高幻觉风险
+                if current_verdict == Verdict.PASS:
+                    return Verdict.CONDITIONAL_PASS
+
+        return current_verdict
 
     def _run_attribution_layer(
         self,
@@ -577,7 +855,7 @@ class TaijiVerifyEngine:
     def system_health(self) -> dict:
         """系统健康状态"""
         health = {
-            "engine_version": "v2.2_6layer_attribution",
+            "engine_version": "v2.2_6layer_attribution_aris",
             "layers_enabled": {
                 "detection": hasattr(self, "rule_engine"),
                 "reasoning": hasattr(self, "seven_step_chain"),
@@ -585,6 +863,9 @@ class TaijiVerifyEngine:
                 "governance": hasattr(self, "twin_atlas"),
                 "execution": hasattr(self, "goal_compiler"),
                 "attribution": hasattr(self, "attribution_verifier"),
+                "cross_model": hasattr(self, "cross_model_verifier"),
+                "dual_track": hasattr(self, "neural_symbolic_verifier"),
+                "rag_score": hasattr(self, "rag_scorer"),
             },
         }
         return health

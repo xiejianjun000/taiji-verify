@@ -56,7 +56,6 @@ from taiji_verify.detection.hallucination_detector import (
 from taiji_verify.detection.attribution_verifier import (
     AttributionVerifier,
     AttributionResult,
-    AttributionLevel,
 )
 from taiji_verify.detection.cross_model_verifier import (
     CrossModelVerifier,

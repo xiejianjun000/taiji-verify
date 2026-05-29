@@ -22,6 +22,10 @@ from __future__ import annotations
 
 import os
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from taiji_verify.embedding import EmbeddingProvider
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -636,7 +640,6 @@ class CrossModelVerifier:
             return flags
 
         responses = list(result.model_responses.values())
-        response_texts = "\n".join(responses)
 
         # 检测关键词不一致
         keywords_sets = [self._extract_keywords(r) for r in responses]
@@ -834,8 +837,6 @@ class CrossModelVerifier:
         english_words = re.findall(r"[a-zA-Z]{3,}", text.lower())
 
         # 提取数字+单位
-        units = re.findall(r"\d+(?:\.\d+)?(?:[万千百亿]?元|[万千百]?吨|年|月|日|%)?", text)
-
         # 合并去重
         keywords = set(chinese_words + english_words)
 

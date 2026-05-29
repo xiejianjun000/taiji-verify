@@ -17,6 +17,10 @@ v2.2 Phase 1
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from taiji_verify.embedding import EmbeddingProvider
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional

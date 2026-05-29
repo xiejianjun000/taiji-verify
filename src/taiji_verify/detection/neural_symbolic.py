@@ -17,14 +17,11 @@ v2.2 Phase 1
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from taiji_verify.detection.cross_model_verifier import (
-    CrossModelVerifier,
-    CrossModelResult,
-)
+from taiji_verify.detection.cross_model_verifier import CrossModelVerifier
 from taiji_verify.detection.rule_engine import RuleEngine, Rule
 from taiji_verify.detection.consistency import SelfConsistencyChecker
 

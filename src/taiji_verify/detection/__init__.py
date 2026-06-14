@@ -52,12 +52,12 @@ from taiji_verify.detection.stream_guard import (
 )
 from taiji_verify.detection.eco_rules import (
     EcoRule,
-    FakeStandardRule,
-    TimeTravelRule,
-    SelfContradictionRule,
-    WrongLegalStatusRule,
-    FakeHistoryRule,
+    RuleEngine as EcoRuleEngine,
     get_all_rules,
+    get_rules_by_dimension,
+    get_rules_by_mode,
+    get_statistics,
+    get_rule_count,
 )
 from taiji_verify.detection.cross_model_verifier import (
     ModelProvider,
@@ -115,12 +115,12 @@ __all__ = [
     "GuardResult",
     # Eco Rules
     "EcoRule",
-    "FakeStandardRule",
-    "TimeTravelRule",
-    "SelfContradictionRule",
-    "WrongLegalStatusRule",
-    "FakeHistoryRule",
+    "EcoRuleEngine",
     "get_all_rules",
+    "get_rules_by_dimension",
+    "get_rules_by_mode",
+    "get_statistics",
+    "get_rule_count",
     # Cross Model Verifier (ARIS)
     "ModelProvider",
     "MockProvider",
